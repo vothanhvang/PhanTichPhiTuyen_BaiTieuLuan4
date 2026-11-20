@@ -6,7 +6,7 @@ GÓI PHẦN MỀM LÕI TÍNH TOÁN: CALFEM PHI TUYẾN HÌNH HỌC CHO KẾT C�
 Học phần  : Phân tích Phi tuyến Kết cấu (Nonlinear Structural Analysis)
 Trường    : Trường Đại học Bách Khoa – ĐHQG TP. Hồ Chí Minh
 GVHD      : PGS.TS. Ngô Hữu Cường
-Học viên  : Võ Thanh Vang (MSHV: 2670624)
+Học viên  : Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624)
 
 Cấu trúc mô-đun (kiến trúc tách lớp rõ ràng, dễ đọc, dễ kiểm chứng):
   1. calfem_elements.py   : Các hàm phần tử & lắp ráp chuẩn CALFEM 3.4

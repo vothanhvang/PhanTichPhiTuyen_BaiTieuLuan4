@@ -7,6 +7,7 @@
 //   3. Web (GitHub Pages chạy trực tiếp trên trình duyệt tại GitHub)
 // ============================================================================
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'screens/home_studio_screen.dart';
 
@@ -20,10 +21,15 @@ class CalfemNonlinearApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    final isWindowsDesktop = !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+    return MaterialApp(
       title: 'CALFEM Nonlinear Studio — Phân tích Phi tuyến Hình học 2D/3D',
       debugShowCheckedModeBanner: false,
-      home: HomeStudioScreen(),
+      builder: (context, child) => ExcludeSemantics(
+        excluding: isWindowsDesktop,
+        child: child ?? const SizedBox.shrink(),
+      ),
+      home: const HomeStudioScreen(),
     );
   }
 }

@@ -73,7 +73,7 @@ def export_quick_docx_report(
     res_bar2g: Optional[AnalysisResult] = None,
     buckling_info: Optional[Dict[str, Any]] = None,
     probe_info: Optional[Dict[str, Any]] = None,
-    author_name: str = "Võ Thanh Vang (MSHV: 2670624)",
+    author_name: str = "Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624)",
 ) -> str:
     """
     Xuất thuyết minh kết quả tính toán tức thời sang tệp Microsoft Word (.docx).
@@ -273,7 +273,7 @@ def export_quick_pdf_report(
     res_nonlinear: AnalysisResult,
     buckling_info: Optional[Dict[str, Any]] = None,
     probe_info: Optional[Dict[str, Any]] = None,
-    author_name: str = "Võ Thanh Vang (MSHV: 2670624)",
+    author_name: str = "Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624)",
 ) -> str:
     """
     Xuất báo cáo kết quả tính toán tức thời sang tệp PDF chuẩn A4 tiếng Việt có dấu.

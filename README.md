@@ -3,10 +3,10 @@
 > **Tiểu luận môn Phân tích Phi tuyến Kết cấu**  
 > **Trường Đại học Bách Khoa – ĐHQG TP. Hồ Chí Minh** | Khoa Kỹ thuật Xây dựng – Bộ môn Công trình  
 > **Giảng viên hướng dẫn:** PGS.TS. Ngô Hữu Cường  
-> **Học viên thực hiện:** Võ Thanh Vang (MSHV: `2670624`)
+> **Học viên thực hiện:** Lâm Phúc Tâm (`2670621`) - Võ Thanh Vang (`2670624`)
 
 [![Chạy trực tiếp trên GitHub Pages](https://img.shields.io/badge/▶%20CHẠY%20TRỰC%20TIẾP%202D%2F3D%20ANSYS-GitHub%20Pages-06B6D4?style=for-the-badge)](https://vothanhvang.github.io/PhanTichPhiTuyen_BaiTieuLuan4/)
-[![Tải Windows EXE](https://img.shields.io/badge/Windows%2010%2F11-.exe%20Portable%20(20MB)-2563EB?style=for-the-badge)](releases/PhanTichPhiTuyen_CALFEM_Windows_x64.exe)
+[![Tải Windows EXE](https://img.shields.io/badge/Windows%2010%2F11-.exe%20Native%20Portable%20(13MB)-2563EB?style=for-the-badge)](releases/PhanTichPhiTuyen_CALFEM_Windows_x64.exe)
 [![Tải Android APK](https://img.shields.io/badge/Android%20ARM64-Xiaomi%20Pad%208%20Pro%20%2F%2013T%20Pro-10B981?style=for-the-badge)](releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk)
 
 ---

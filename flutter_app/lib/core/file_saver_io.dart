@@ -1,33 +1,46 @@
-// Lưu tệp báo cáo Word (.docx) & PDF (.pdf) trực tiếp trên Windows và Android
+// Lưu tệp báo cáo Word (.docx) & PDF (.pdf) kèm HỘP THOẠI CHỌN NƠI LƯU
+// chuẩn hệ điều hành trên cả Windows (Win32 GetSaveFileNameW) & Android (SAF)!
 import 'dart:io';
-import 'dart:typed_data';
+import 'package:flutter/services.dart';
 
-Future<String> saveBinaryFile(String fileName, Uint8List bytes, String mimeType) async {
+const MethodChannel _fileDialogChannel = MethodChannel('calfem.native/file_dialog');
+
+Future<String?> saveBinaryFile(String fileName, Uint8List bytes, String mimeType) async {
+  final dotIdx = fileName.lastIndexOf('.');
+  final ext = (dotIdx >= 0 && dotIdx < fileName.length - 1)
+      ? fileName.substring(dotIdx + 1).toLowerCase()
+      : 'pdf';
+
+  if (Platform.isWindows || Platform.isAndroid) {
+    try {
+      // Hiện hộp thoại "Save As" bản địa của Windows / Android để người dùng chọn thư mục & tên tệp
+      final chosen = await _fileDialogChannel.invokeMethod<String>('saveFile', {
+        'fileName': fileName,
+        'ext': ext,
+        'mimeType': mimeType,
+        'bytes': bytes,
+      });
+      // chosen == null nghĩa là người dùng bấm Hủy (Cancel)
+      return chosen;
+    } on MissingPluginException {
+      // Fallback duy nhất khi chạy trong môi trường unit test không có native channel
+    }
+  }
+
+  // Fallback an toàn cho các nền tảng khác
   Directory targetDir;
   if (Platform.isWindows) {
     final userHome = Platform.environment['USERPROFILE'] ?? Directory.current.path;
-    final docs = Directory('$userHome\\Documents\\CALFEM_PhiTuyen_BaoCao');
-    if (!await docs.exists()) {
-      await docs.create(recursive: true);
-    }
-    targetDir = docs;
+    targetDir = Directory('$userHome\\Documents\\CALFEM_PhiTuyen_BaoCao');
   } else if (Platform.isAndroid) {
-    // Lưu trực tiếp vào thư mục Download trên Xiaomi Pad 8 Pro / Xiaomi 13T Pro
-    final dl = Directory('/storage/emulated/0/Download/CALFEM_PhiTuyen');
-    try {
-      if (!await dl.exists()) {
-        await dl.create(recursive: true);
-      }
-      targetDir = dl;
-    } catch (_) {
-      targetDir = Directory.systemTemp;
-    }
+    targetDir = Directory('/storage/emulated/0/Download/CALFEM_PhiTuyen');
   } else {
     targetDir = Directory.systemTemp;
   }
-
-  final sep = Platform.pathSeparator;
-  final file = File('${targetDir.path}$sep$fileName');
+  if (!await targetDir.exists()) {
+    await targetDir.create(recursive: true);
+  }
+  final file = File('${targetDir.path}${Platform.pathSeparator}$fileName');
   await file.writeAsBytes(bytes, flush: true);
   return file.path;
 }

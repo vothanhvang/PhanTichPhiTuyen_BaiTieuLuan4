@@ -106,9 +106,9 @@ def _add_header(slide, title: str, subtitle: str, slide_num: int, total: int = 2
     ftf = ft.text_frame
     fp = ftf.paragraphs[0]
     fr = fp.add_run()
-    fr.text = "ĐH Bách Khoa TP.HCM  •  Tiểu luận Phân tích Phi tuyến Kết cấu (CALFEM Phi tuyến Hình học)  •  Võ Thanh Vang (2670624)"
+    fr.text = "ĐH Bách Khoa TP.HCM  •  Tiểu luận Phân tích Phi tuyến Kết cấu (CALFEM)  •  Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624)"
     fr.font.name = FONT_MAIN
-    fr.font.size = Pt(9.2)
+    fr.font.size = Pt(8.8)
     fr.font.color.rgb = C_MUTED
 
 
@@ -300,7 +300,7 @@ def build_pptx(base_dir: str) -> str:
     mtf.margin_top = Inches(0.22)
     meta_lines = [
         ("Giảng viên hướng dẫn:   ", "PGS.TS. NGÔ HỮU CƯỜNG", C_WHITE),
-        ("Học viên thực hiện:       ", "VÕ THANH VANG  —  MSHV: 2670624", C_CYAN),
+        ("Học viên thực hiện:       ", "LÂM PHÚC TÂM (2670621) - VÕ THANH VANG (2670624)", C_CYAN),
         ("Sản phẩm bàn giao:        ", "Word (.docx) • PDF • PowerPoint • Python Core • Flutter 2D/3D (.exe, .apk, GitHub Web)", RGBColor(0xCB, 0xD5, 0xE1)),
         ("Kho mã nguồn & Demo:   ", "https://github.com/vothanhvang/PhanTichPhiTuyen_BaiTieuLuan4", RGBColor(0x34, 0xD3, 0x99)),
     ]

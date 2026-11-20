@@ -192,6 +192,16 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
               loadFactor: _loadFactor,
             );
       if (!mounted) return;
+      if (savedPath == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Color(0xFF475569),
+            duration: Duration(seconds: 2),
+            content: Text('Đã hủy lưu tệp báo cáo.'),
+          ),
+        );
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: const Color(0xFF0F766E),
@@ -272,7 +282,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                           style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
                         ),
                         Text(
-                          'ĐH Bách Khoa TP.HCM • Võ Thanh Vang (2670624) • ${_resActive.engineSource}',
+                          'ĐH Bách Khoa TP.HCM • Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624) • ${_resActive.engineSource}',
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 10,

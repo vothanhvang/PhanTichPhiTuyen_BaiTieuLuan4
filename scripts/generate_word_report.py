@@ -424,10 +424,10 @@ def _add_page_number_footer(section) -> None:
     hdr = section.header
     hp = hdr.paragraphs[0]
     hp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    hr = hp.add_run("Tiểu luận Phân tích Phi tuyến Kết cấu — Hệ Dàn CALFEM Phi tuyến Hình học  |  Võ Thanh Vang (2670624)")
+    hr = hp.add_run("Tiểu luận Phân tích Phi tuyến Kết cấu — Hệ Dàn CALFEM  |  Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624)")
     hr.italic = True
     hr.font.name = "Times New Roman"
-    hr.font.size = Pt(9.0)
+    hr.font.size = Pt(8.5)
     hr.font.color.rgb = MUTED
 
     # Footer số trang tự động
@@ -531,8 +531,8 @@ def _add_cover_page(doc: Document) -> None:
     )
     info_rows = [
         ("Giảng viên hướng dẫn:", "PGS.TS. NGÔ HỮU CƯỜNG"),
-        ("Học viên thực hiện:", "VÕ THANH VANG"),
-        ("Mã số học viên (MSHV):", "2670624"),
+        ("Học viên thực hiện:", "LÂM PHÚC TÂM (2670621)"),
+        ("", "VÕ THANH VANG (2670624)"),
         ("Công cụ tính toán & kiểm chứng:", "Python (CALFEM 3.4), Flutter Dart (2D/3D ANSYS), SAP2000"),
         ("Đóng gói triển khai:", "Windows (.exe), Android (.apk — Xiaomi Pad 8 Pro & 13T Pro), GitHub Web"),
         ("Kho mã nguồn & ứng dụng trực tuyến:", "https://github.com/vothanhvang/PhanTichPhiTuyen_BaiTieuLuan4"),

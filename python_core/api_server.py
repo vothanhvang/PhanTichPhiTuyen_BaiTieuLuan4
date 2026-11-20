@@ -202,6 +202,11 @@ class CalfemAPIHandler(BaseHTTPRequestHandler):
                     b64 = base64.b64encode(f.read()).decode("ascii")
                 self._send_json(200, {"status": "ok", "path": saved, "format": fmt, "base64": b64})
                 return
+            if self.path == "/api/shutdown":
+                self._send_json(200, {"status": "shutting_down"})
+                import threading
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+                return
             self._send_json(404, {"error": "Endpoint không tồn tại"})
         except Exception as exc:
             self._send_json(500, {"error": str(exc)})

@@ -14,7 +14,6 @@ import 'package:http/http.dart' as http;
 import 'calfem_engine.dart';
 
 class PythonBridge {
-  static Process? _proc;
   static bool _connected = false;
   static const int _port = 18765;
   static Uri _uri(String path) => Uri.parse('http://127.0.0.1:$_port$path');
@@ -50,7 +49,7 @@ class PythonBridge {
     for (final path in candidates) {
       if (await File(path).exists()) {
         try {
-          _proc = await Process.start(path, ['--port', '$_port'], mode: ProcessStartMode.detached);
+          await Process.start(path, ['--port', '$_port'], mode: ProcessStartMode.detached);
           for (int i = 0; i < 12; i++) {
             await Future.delayed(const Duration(milliseconds: 350));
             if (await _ping()) {
@@ -155,7 +154,9 @@ class PythonBridge {
   }
 
   static void dispose() {
-    _proc?.kill();
-    _proc = null;
+    if (_connected) {
+      http.post(_uri('/api/shutdown')).timeout(const Duration(milliseconds: 400)).catchError((_) => http.Response('', 200));
+    }
+    _connected = false;
   }
 }
