@@ -14,12 +14,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/calfem_engine.dart';
+import '../core/connection_calculator.dart';
 import '../core/report_generator.dart';
 import '../core/python_bridge_stub.dart'
     if (dart.library.io) '../core/python_bridge_io.dart';
 import '../widgets/ansys_viewport_2d.dart';
 import '../widgets/ansys_viewport_3d.dart';
 import '../widgets/surgical_dissection_panel.dart';
+import '../widgets/connection_detail_panel.dart';
 import '../widgets/charts_and_tables_panel.dart';
 import '../widgets/theory_and_code_panel.dart';
 
@@ -43,6 +45,15 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
   double _pKn = 208.0;
   double _loadFactor = 1.0;
   int _nSteps = 10;
+
+  // Tùy chọn liên kết gối tựa tại từng nút (hỗ trợ đủ 8 loại liên kết + lò xo đàn hồi)
+  List<NodeSupportType> _nodeSupports =
+      List<NodeSupportType>.from(TrussModelData.defaultSupportsFor(TrussPreset.assignment5Bar));
+  double _springStiffnessKnMm = 500.0;
+  // Chế độ hiển thị liên kết (Sơ đồ tính ↔ Chi tiết gia công chế tạo) & Thông số thiết kế liên kết
+  ConnectionDisplayMode _connectionMode = ConnectionDisplayMode.schematic;
+  ConnectionDesignParams _connParams = const ConnectionDesignParams();
+  int _selectedNode = 0;
 
   // Trạng thái hiển thị 2D/3D & Phẫu thuật
   bool _is3D = true;
@@ -100,6 +111,10 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
   }
 
   void _recomputeLocal() {
+    final defSup = TrussModelData.defaultSupportsFor(_preset);
+    if (_nodeSupports.length != defSup.length) {
+      _nodeSupports = List<NodeSupportType>.from(defSup);
+    }
     _model = TrussModelData.create(
       preset: _preset,
       lMm: _lMm,
@@ -107,6 +122,8 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
       aMm2: _aMm2,
       pKn: _pKn,
       sectionShape: _sectionShape,
+      customSupports: _nodeSupports,
+      springStiffnessKnMm: _springStiffnessKnMm,
     );
     if (_selectedElem >= _model.nElems) {
       _selectedElem = 0;
@@ -128,6 +145,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
 
   Future<void> _syncFromPythonIfAvailable() async {
     if (!_pythonOnline) return;
+    if (_resActive.warningMessage != null) return;
     final pyRes = await PythonBridge.tryAnalyzeViaPython(_model, _method, _loadFactor, _nSteps);
     if (pyRes != null && mounted) {
       setState(() => _resActive = pyRes);
@@ -190,6 +208,16 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
         zetaNorm: _zetaNorm,
         imperfectionRatio: _imperfectionRatio,
       );
+      final connReports = [
+        for (int i = 0; i < _model.nNodes; i++)
+          ConnectionCalculator.analyzeNode(
+            model: _model,
+            result: _resActive,
+            nodeIndex: i,
+            params: _connParams,
+            loadFactor: _loadFactor,
+          ),
+      ];
       final savedPath = asPdf
           ? await FlutterReportGenerator.exportPdf(
               model: _model,
@@ -197,6 +225,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
               nonlinear: _resActive,
               probe: probe,
               loadFactor: _loadFactor,
+              connectionReports: connReports,
             )
           : await FlutterReportGenerator.exportDocx(
               model: _model,
@@ -204,6 +233,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
               nonlinear: _resActive,
               probe: probe,
               loadFactor: _loadFactor,
+              connectionReports: connReports,
             );
       if (!mounted) return;
       if (savedPath == null) {
@@ -339,7 +369,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                   onPressed: _showContactDialog,
                 ),
                 IconButton(
-                  tooltip: _darkMode ? 'Chế độ sáng' : 'Chế độ tối ANSYS',
+                  tooltip: _darkMode ? 'Chế độ sáng' : 'Chế độ tối',
                   icon: Icon(_darkMode ? Icons.light_mode : Icons.dark_mode),
                   onPressed: () => setState(() => _darkMode = !_darkMode),
                 ),
@@ -357,10 +387,10 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                     onDestinationSelected: (i) => setState(() => _mobileTab = i),
                     destinations: const [
                       NavigationDestination(icon: Icon(Icons.view_in_ar), label: 'Mô phỏng'),
+                      NavigationDestination(icon: Icon(Icons.precision_manufacturing), label: 'Liên kết'),
                       NavigationDestination(icon: Icon(Icons.biotech), label: 'Phẫu thuật'),
                       NavigationDestination(icon: Icon(Icons.tune), label: 'Thông số'),
                       NavigationDestination(icon: Icon(Icons.show_chart), label: 'Biểu đồ'),
-                      NavigationDestination(icon: Icon(Icons.menu_book), label: 'Lý thuyết'),
                     ],
                   ),
           );
@@ -400,21 +430,23 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
           flex: 5,
           child: _buildViewportColumn(probe),
         ),
-        // CỘT PHẢI: Phòng Phẫu thuật / Biểu đồ & Bảng / Lý thuyết & Code
+        // CỘT PHẢI: Phòng Phẫu thuật / Chi tiết & Tính toán Liên kết / Biểu đồ / Lý thuyết
         SizedBox(
-          width: 390,
+          width: 424,
           child: Container(
             decoration: BoxDecoration(border: Border(left: BorderSide(color: border))),
             child: Column(
               children: [
                 Container(
                   color: _darkMode ? const Color(0xFF0F172A) : Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
                   child: SegmentedButton<int>(
+                    showSelectedIcon: false,
                     segments: const [
-                      ButtonSegment(value: 0, icon: Icon(Icons.biotech, size: 15), label: Text('Phẫu thuật', style: TextStyle(fontSize: 11))),
-                      ButtonSegment(value: 1, icon: Icon(Icons.analytics, size: 15), label: Text('Biểu đồ', style: TextStyle(fontSize: 11))),
-                      ButtonSegment(value: 2, icon: Icon(Icons.code, size: 15), label: Text('Lý thuyết', style: TextStyle(fontSize: 11))),
+                      ButtonSegment(value: 0, icon: Icon(Icons.biotech, size: 14), label: Text('Phẫu thuật', style: TextStyle(fontSize: 10.2))),
+                      ButtonSegment(value: 1, icon: Icon(Icons.precision_manufacturing, size: 14), label: Text('Liên kết', style: TextStyle(fontSize: 10.2))),
+                      ButtonSegment(value: 2, icon: Icon(Icons.analytics, size: 14), label: Text('Biểu đồ', style: TextStyle(fontSize: 10.2))),
+                      ButtonSegment(value: 3, icon: Icon(Icons.code, size: 14), label: Text('Lý thuyết', style: TextStyle(fontSize: 10.2))),
                     ],
                     selected: {_rightTab},
                     onSelectionChanged: (s) => setState(() => _rightTab = s.first),
@@ -429,19 +461,34 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
     );
   }
 
-  /// Bố cục 5 tab cảm ứng tối ưu cho điện thoại Xiaomi 13T Pro
+  /// Bố cục 5 tab cảm ứng tối ưu cho màn hình nhỏ / điện thoại
   Widget _buildMobileWorkbench(ProbeInspection probe) {
     switch (_mobileTab) {
       case 0:
         return _buildViewportColumn(probe);
       case 1:
-        return _buildRightContent(probe, 0);
-      case 2:
-        return _buildControlPanel();
-      case 3:
         return _buildRightContent(probe, 1);
+      case 2:
+        return _buildRightContent(probe, 0);
+      case 3:
+        return _buildControlPanel();
       default:
-        return _buildRightContent(probe, 2);
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 2, icon: Icon(Icons.analytics, size: 14), label: Text('Biểu đồ & Bảng', style: TextStyle(fontSize: 11))),
+                  ButtonSegment(value: 3, icon: Icon(Icons.menu_book, size: 14), label: Text('Lý thuyết', style: TextStyle(fontSize: 11))),
+                ],
+                selected: {_rightTab == 3 ? 3 : 2},
+                onSelectionChanged: (s) => setState(() => _rightTab = s.first),
+              ),
+            ),
+            Expanded(child: _buildRightContent(probe, _rightTab == 3 ? 3 : 2)),
+          ],
+        );
     }
   }
 
@@ -477,6 +524,31 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                 selected: _surgicalMode,
                 selectedColor: const Color(0xFF00E5FF),
                 onSelected: (v) => setState(() => _surgicalMode = v),
+              ),
+              FilterChip(
+                avatar: Icon(
+                  Icons.precision_manufacturing,
+                  size: 15,
+                  color: _connectionMode == ConnectionDisplayMode.fabrication
+                      ? Colors.black
+                      : const Color(0xFFFBBF24),
+                ),
+                label: Text(
+                  _connectionMode == ConnectionDisplayMode.fabrication
+                      ? 'Chi tiết chế tạo'
+                      : 'Sơ đồ tính',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: _connectionMode == ConnectionDisplayMode.fabrication ? Colors.black : null,
+                  ),
+                ),
+                selected: _connectionMode == ConnectionDisplayMode.fabrication,
+                selectedColor: const Color(0xFFFBBF24),
+                onSelected: (v) => setState(() {
+                  _connectionMode = v ? ConnectionDisplayMode.fabrication : ConnectionDisplayMode.schematic;
+                  if (v) _rightTab = 1;
+                }),
               ),
               DropdownButton<ContourField>(
                 value: _contourField,
@@ -519,6 +591,41 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
           ),
         ),
 
+        // Cảnh báo tức thời nếu liên kết các nút làm hệ biến hình (ma trận suy biến)
+        if (_resActive.warningMessage != null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            color: const Color(0xFFB91C1C),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: Color(0xFFFDE047), size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _resActive.warningMessage!,
+                    style: const TextStyle(color: Colors.white, fontSize: 11.2, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    backgroundColor: Colors.white.withValues(alpha: 0.16),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () => _updateAndSolve(() {
+                    _nodeSupports = List<NodeSupportType>.from(TrussModelData.defaultSupportsFor(_preset));
+                    _springStiffnessKnMm = 500.0;
+                  }),
+                  child: const Text('Khôi phục gối', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ),
+
         // Cửa sổ hiển thị 2D hoặc 3D chính
         Expanded(
           child: _is3D
@@ -532,6 +639,8 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                   probeXi: _probeXi,
                   surgicalMode: _surgicalMode,
                   darkMode: _darkMode,
+                  connectionMode: _connectionMode,
+                  connectionType: _connParams.detailType,
                   onProbeChanged: (e, xi) => setState(() {
                     _selectedElem = e;
                     _probeXi = xi;
@@ -547,6 +656,8 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                   probeXi: _probeXi,
                   surgicalMode: _surgicalMode,
                   darkMode: _darkMode,
+                  connectionMode: _connectionMode,
+                  connectionType: _connParams.detailType,
                   onProbeChanged: (e, xi) => setState(() {
                     _selectedElem = e;
                     _probeXi = xi;
@@ -707,6 +818,11 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
       _etaNorm = 0.0;
       _zetaNorm = 0.0;
       _imperfectionRatio = 0.002;
+      _nodeSupports = List<NodeSupportType>.from(TrussModelData.defaultSupportsFor(TrussPreset.assignment5Bar));
+      _springStiffnessKnMm = 500.0;
+      _connectionMode = ConnectionDisplayMode.schematic;
+      _connParams = const ConnectionDesignParams();
+      _selectedNode = 0;
     });
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -756,6 +872,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                   if (v == null) return;
                   _updateAndSolve(() {
                     _preset = v;
+                    _nodeSupports = List<NodeSupportType>.from(TrussModelData.defaultSupportsFor(v));
                     _loadFactor = 1.0;
                     _deformScale = v == TrussPreset.dahlblomEx91 ? 3.0 : (v == TrussPreset.vonMisesArch ? 5.0 : 180.0);
                   });
@@ -792,7 +909,232 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
         ),
         const SizedBox(height: 10),
 
-        // Card 2: Thông số hình học, vật liệu & mức tải (Nhập số trực tiếp + Thanh trượt + Reset)
+        // Card 2: Tùy chọn tạo & chỉnh loại liên kết gối tựa tại từng nút
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: _resActive.warningMessage != null
+                  ? const Color(0xFFEF4444)
+                  : const Color(0xFF06B6D4).withValues(alpha: 0.45),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Expanded(
+                    child: Text('2. Liên kết Gối tựa tại các Nút',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.3, color: Color(0xFF38BDF8))),
+                  ),
+                  Tooltip(
+                    message: 'Khôi phục liên kết gối tựa mặc định của bài toán hiện tại',
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF38BDF8),
+                        side: BorderSide(color: const Color(0xFF38BDF8).withValues(alpha: 0.55)),
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      ),
+                      onPressed: () => _updateAndSolve(() {
+                        _nodeSupports = List<NodeSupportType>.from(TrussModelData.defaultSupportsFor(_preset));
+                        _springStiffnessKnMm = 500.0;
+                      }),
+                      icon: const Icon(Icons.undo, size: 12.5),
+                      label: const Text('Mặc định', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              // Huy hiệu trạng thái tĩnh định / siêu tĩnh / biến hình tức thời
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: _resActive.warningMessage != null
+                      ? const Color(0x33EF4444)
+                      : (_model.totalRestraintsCount > 3
+                          ? const Color(0x2238BDF8)
+                          : const Color(0x2210B981)),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  _resActive.warningMessage != null
+                      ? '⚠ Hệ BIẾN HÌNH (${_model.totalRestraintsCount} bậc ràng buộc — cần bổ sung gối!)'
+                      : (_model.totalRestraintsCount == 3
+                          ? '✓ Bất biến hình — Tĩnh định ngoài (3 bậc ràng buộc)'
+                          : '✓ Bất biến hình — Siêu tĩnh bậc ${_model.totalRestraintsCount - 3} (${_model.totalRestraintsCount} bậc ràng buộc)'),
+                  style: TextStyle(
+                    fontSize: 10.2,
+                    fontWeight: FontWeight.w600,
+                    color: _resActive.warningMessage != null
+                        ? const Color(0xFFFCA5A5)
+                        : (_model.totalRestraintsCount > 3
+                            ? const Color(0xFF38BDF8)
+                            : const Color(0xFF10B981)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 7),
+              for (int i = 0; i < _model.nNodes; i++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 34,
+                        padding: const EdgeInsets.symmetric(vertical: 5),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: _supportBadgeColor(_nodeSupports[i]).withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: _supportBadgeColor(_nodeSupports[i]).withValues(alpha: 0.7)),
+                        ),
+                        child: Text(
+                          'N${i + 1}',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.bold,
+                            color: _supportBadgeColor(_nodeSupports[i]),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: DropdownButtonFormField<NodeSupportType>(
+                          key: ValueKey('sup_${_preset.code}_${i}_${_nodeSupports[i].code}'),
+                          initialValue: _nodeSupports[i],
+                          isExpanded: true,
+                          isDense: true,
+                          decoration: const InputDecoration(
+                            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: [
+                            for (final st in NodeSupportType.values)
+                              DropdownMenuItem(
+                                value: st,
+                                child: Text(
+                                  st.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 10.4),
+                                ),
+                              ),
+                          ],
+                          onChanged: (v) {
+                            if (v == null) return;
+                            _updateAndSolve(() {
+                              final next = List<NodeSupportType>.from(_nodeSupports);
+                              next[i] = v;
+                              _nodeSupports = next;
+                            });
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (_model.hasAnySpring) ...[
+                const Divider(height: 12),
+                _EditableParamSlider(
+                  label: 'Độ cứng gối lò xo k',
+                  value: _springStiffnessKnMm,
+                  min: 10,
+                  max: 5000,
+                  hardMin: 0.1,
+                  hardMax: 1000000,
+                  unit: 'kN/mm',
+                  darkMode: _darkMode,
+                  onChanged: (v) => _updateAndSolve(() => _springStiffnessKnMm = v),
+                ),
+              ],
+              const SizedBox(height: 4),
+              // Chuyển nhanh chế độ Sơ đồ tính ↔ Chi tiết gia công chế tạo
+              SegmentedButton<ConnectionDisplayMode>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(
+                    value: ConnectionDisplayMode.schematic,
+                    label: Text('Sơ đồ tính', style: TextStyle(fontSize: 10.0)),
+                  ),
+                  ButtonSegment(
+                    value: ConnectionDisplayMode.fabrication,
+                    label: Text('Chi tiết chế tạo', style: TextStyle(fontSize: 10.0)),
+                  ),
+                ],
+                selected: {_connectionMode},
+                onSelectionChanged: (s) => setState(() {
+                  _connectionMode = s.first;
+                  if (_connectionMode == ConnectionDisplayMode.fabrication) _rightTab = 1;
+                }),
+              ),
+              if (_connectionMode == ConnectionDisplayMode.fabrication) ...[
+                const SizedBox(height: 6),
+                DropdownButtonFormField<ConnectionDetailType>(
+                  key: ValueKey('left_dt_${_connParams.detailType.code}'),
+                  initialValue: _connParams.detailType,
+                  isExpanded: true,
+                  isDense: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Kiểu gia công đầu thanh',
+                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: [
+                    for (final dt in ConnectionDetailType.values)
+                      DropdownMenuItem(value: dt, child: Text(dt.label, style: const TextStyle(fontSize: 10.3))),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setState(() => _connParams = _connParams.copyWith(detailType: v));
+                  },
+                ),
+              ],
+              const SizedBox(height: 6),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => setState(() {
+                    _connectionMode = ConnectionDisplayMode.fabrication;
+                    _rightTab = 1;
+                    _mobileTab = 1;
+                  }),
+                  icon: const Icon(Icons.calculate_outlined, size: 14, color: Color(0xFFFBBF24)),
+                  label: const Text(
+                    'Mở bản vẽ & tính toán liên kết chi tiết',
+                    style: TextStyle(fontSize: 10.2, fontWeight: FontWeight.w600, color: Color(0xFFFBBF24)),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: const Color(0xFFFBBF24).withValues(alpha: 0.55)),
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Hỗ trợ 8 loại liên kết dàn 2D/3D (Sơ đồ tính & Chi tiết gia công chế tạo) kèm kiểm tra bền TCVN 5575 / EN 1993-1-8.',
+                style: TextStyle(
+                  fontSize: 9.4,
+                  height: 1.3,
+                  color: _darkMode ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // Card 3: Thông số hình học, vật liệu & mức tải (Nhập số trực tiếp + Thanh trượt + Reset)
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: border)),
@@ -803,7 +1145,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Expanded(
-                    child: Text('2. Thông số Vật liệu & Tải trọng',
+                    child: Text('3. Thông số Vật liệu & Tải trọng',
                         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.3, color: Color(0xFF38BDF8))),
                   ),
                   Tooltip(
@@ -932,7 +1274,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('3. Chỉ số Kết quả Tức thì',
+              const Text('4. Chỉ số Kết quả Tức thì',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5, color: Color(0xFF10B981))),
               const SizedBox(height: 6),
               Text(
@@ -994,6 +1336,27 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
       );
     }
     if (tabIdx == 1) {
+      return ConnectionDetailPanel(
+        model: _model,
+        resultNL: _resActive,
+        loadFactor: _loadFactor,
+        selectedNode: _selectedNode,
+        connectionMode: _connectionMode,
+        designParams: _connParams,
+        darkMode: _darkMode,
+        onNodeChanged: (n) => setState(() => _selectedNode = n),
+        onModeChanged: (m) => setState(() => _connectionMode = m),
+        onParamsChanged: (p) => setState(() => _connParams = p),
+        onSupportChanged: (nodeIdx, newType) => _updateAndSolve(() {
+          final next = List<NodeSupportType>.from(_nodeSupports);
+          if (nodeIdx >= 0 && nodeIdx < next.length) {
+            next[nodeIdx] = newType;
+            _nodeSupports = next;
+          }
+        }),
+      );
+    }
+    if (tabIdx == 2) {
       return ChartsAndTablesPanel(
         model: _model,
         resLinear: _resLinear,
@@ -1006,6 +1369,13 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
       );
     }
     return TheoryAndCodePanel(darkMode: _darkMode);
+  }
+
+  Color _supportBadgeColor(NodeSupportType type) {
+    if (type == NodeSupportType.free) return const Color(0xFF94A3B8);
+    if (type == NodeSupportType.pin) return const Color(0xFF38BDF8);
+    if (type.hasSpring) return const Color(0xFFFBBF24);
+    return const Color(0xFF10B981);
   }
 }
 

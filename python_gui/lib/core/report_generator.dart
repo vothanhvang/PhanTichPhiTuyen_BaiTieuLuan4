@@ -16,6 +16,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import 'calfem_engine.dart';
+import 'connection_calculator.dart';
 import 'file_saver_stub.dart'
     if (dart.library.io) 'file_saver_io.dart'
     if (dart.library.js_interop) 'file_saver_web.dart';
@@ -79,6 +80,7 @@ class FlutterReportGenerator {
     required TrussAnalysisResult nonlinear,
     required ProbeInspection probe,
     required double loadFactor,
+    List<NodeConnectionReport>? connectionReports,
   }) async {
     final now = DateTime.now();
     final ts = '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year} '
@@ -92,6 +94,12 @@ class FlutterReportGenerator {
 
     body.write(_docxParagraph('1. THÔNG SỐ ĐẦU VÀO & PHƯƠNG PHÁP PHÂN TÍCH', bold: true, sizeHalfPt: 24, colorHex: '0F3D6E'));
     body.write(_docxParagraph('• Mô hình: ${model.name} — ${model.description}'));
+    final supSummary = [
+      for (int i = 0; i < model.nodeSupports.length; i++)
+        'N${i + 1}: ${model.nodeSupports[i].shortLabel}',
+    ].join(' | ');
+    body.write(_docxParagraph(
+        '• Liên kết gối tựa các nút: $supSummary${model.hasAnySpring ? " (k = ${model.springStiffnessKnMm.toStringAsFixed(1)} kN/mm)" : ""}'));
     body.write(_docxParagraph('• Hệ số tải trọng đang khảo sát: λ = ${loadFactor.toStringAsFixed(2)}  |  Lõi tính toán: ${nonlinear.engineSource}'));
     body.write(_docxParagraph('• Thuật toán phi tuyến: ${nonlinear.methodName} (Hội tụ: ${nonlinear.converged ? "ĐẠT" : "KHÔNG ĐẠT"}, ${nonlinear.totalIterations} vòng lặp).'));
     body.write(_docxParagraph('• Tài liệu & công thức áp dụng: CALFEM 3.4 bar2e/bar2g (calfem34.pdf tr. 5.3-2..5); Olsson & Dahlblom (2016) Chương 9 PT (9.35)-(9.38) tr. 259; Bài giảng NSA_4 Slides 6-12 & NSA_6 Mục 6.2-6.3; McGuire (2000) Chương 9 & 12.'));
@@ -162,6 +170,29 @@ class FlutterReportGenerator {
       '• Năng lượng biến dạng tổng: Tuyến tính U_TT = ${(linear.totalEnergyNmm / 1000.0).toStringAsFixed(6)} J  |  Phi tuyến U_PT = ${(nonlinear.totalEnergyNmm / 1000.0).toStringAsFixed(6)} J.',
     ));
 
+    if (connectionReports != null && connectionReports.isNotEmpty) {
+      final firstP = connectionReports.first.params;
+      body.write(_docxParagraph('7. TÍNH TOÁN & KIỂM TRA LIÊN KẾT CÁC NÚT (TCVN 5575 / EN 1993-1-8)', bold: true, sizeHalfPt: 24, colorHex: '0F3D6E'));
+      body.write(_docxParagraph(
+        '• Cấu tạo gia công: ${firstP.detailType.label} | Bản mã PL${firstP.gussetThicknessMm.toStringAsFixed(0)} thép ${firstP.steelGrade.code} (fy=${firstP.steelGrade.fyMpa.toStringAsFixed(0)} MPa).',
+      ));
+      final connRows = <List<String>>[];
+      for (final rep in connectionReports) {
+        connRows.add([
+          'Nút ${rep.nodeIndex + 1} (${rep.supportType.shortLabel})',
+          '${rep.gussetWidthMm.toStringAsFixed(0)}×${rep.gussetHeightMm.toStringAsFixed(0)}×${rep.params.gussetThicknessMm.toStringAsFixed(0)}',
+          '${rep.maxGussetSigmaMpa.toStringAsFixed(1)} MPa',
+          '${rep.maxUtilizationPct.toStringAsFixed(1)}%',
+          rep.allPassed ? 'ĐẠT' : 'KHÔNG ĐẠT',
+        ]);
+      }
+      body.write(_docxTable(
+        ['Nút & Liên kết', 'Bản mã (mm)', 'σ_eq,max', 'Tỷ lệ max', 'Kết luận'],
+        connRows,
+        '0F766E',
+      ));
+    }
+
     final documentXml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:body>
@@ -209,6 +240,7 @@ class FlutterReportGenerator {
     required TrussAnalysisResult nonlinear,
     required ProbeInspection probe,
     required double loadFactor,
+    List<NodeConnectionReport>? connectionReports,
   }) async {
     final fontReg = pw.Font.ttf(await rootBundle.load('assets/fonts/DejaVuSans.ttf'));
     final fontBold = pw.Font.ttf(await rootBundle.load('assets/fonts/DejaVuSans-Bold.ttf'));
@@ -253,6 +285,7 @@ class FlutterReportGenerator {
           pw.SizedBox(height: 3),
           pw.Text(
             '• Mô hình: ${model.name} — ${model.description}\n'
+            '• Liên kết nút: ${[for (int i = 0; i < model.nodeSupports.length; i++) "N${i + 1}: ${model.nodeSupports[i].shortLabel}"].join(" | ")}${model.hasAnySpring ? " (k = ${model.springStiffnessKnMm.toStringAsFixed(1)} kN/mm)" : ""}\n'
             '• Hệ số tải λ = ${loadFactor.toStringAsFixed(2)} | Phương pháp: ${nonlinear.methodName}\n'
             '• Lõi giải: ${nonlinear.engineSource} | Hội tụ: ${nonlinear.converged ? "ĐẠT" : "KHÔNG ĐẠT"} (${nonlinear.totalIterations} vòng lặp).',
             style: const pw.TextStyle(fontSize: 9, lineSpacing: 2.5),
@@ -326,6 +359,29 @@ class FlutterReportGenerator {
             '• Năng lượng biến dạng tổng: Tuyến tính = ${(linear.totalEnergyNmm / 1000).toStringAsFixed(6)} J | Phi tuyến = ${(nonlinear.totalEnergyNmm / 1000).toStringAsFixed(6)} J.',
             style: const pw.TextStyle(fontSize: 9, lineSpacing: 2.5),
           ),
+          if (connectionReports != null && connectionReports.isNotEmpty) ...[
+            pw.SizedBox(height: 10),
+            pw.Text('6. Tính toán & kiểm tra liên kết các nút (TCVN 5575 / EN 1993-1-8)',
+                style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11, color: navy)),
+            pw.SizedBox(height: 4),
+            pw.TableHelper.fromTextArray(
+              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8.2, color: PdfColors.white),
+              headerDecoration: pw.BoxDecoration(color: teal),
+              cellStyle: const pw.TextStyle(fontSize: 8.0),
+              oddRowDecoration: pw.BoxDecoration(color: lightRow),
+              headers: ['Nút & Liên kết', 'Bản mã (mm)', 'σ_eq,max', 'Tỷ lệ max', 'Kết luận'],
+              data: [
+                for (final rep in connectionReports)
+                  [
+                    'N${rep.nodeIndex + 1} (${rep.supportType.shortLabel})',
+                    '${rep.gussetWidthMm.toStringAsFixed(0)}×${rep.gussetHeightMm.toStringAsFixed(0)}×${rep.params.gussetThicknessMm.toStringAsFixed(0)}',
+                    '${rep.maxGussetSigmaMpa.toStringAsFixed(1)} MPa',
+                    '${rep.maxUtilizationPct.toStringAsFixed(1)}%',
+                    rep.allPassed ? 'ĐẠT' : 'KHÔNG ĐẠT',
+                  ],
+              ],
+            ),
+          ],
         ],
       ),
     );

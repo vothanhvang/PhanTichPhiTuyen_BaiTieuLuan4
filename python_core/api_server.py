@@ -55,27 +55,42 @@ from .report_exporter import export_quick_docx_report, export_quick_pdf_report
 
 
 def _build_model_from_payload(payload: Dict[str, Any]):
+    import numpy as np
+
     preset = payload.get("preset", "assignment_5bar")
     if preset == "dahlblom_ex9_1":
-        return create_dahlblom_example_9_1()
-    if preset == "calfem_exs3":
-        return create_calfem_exs3_truss()
-    if preset == "von_mises":
-        return create_von_mises_arch(
+        model = create_dahlblom_example_9_1()
+    elif preset == "calfem_exs3":
+        model = create_calfem_exs3_truss()
+    elif preset == "von_mises":
+        model = create_von_mises_arch(
             span_half_mm=float(payload.get("L_mm", 1000.0)),
             rise_mm=float(payload.get("rise_mm", 200.0)),
             E_mpa=float(payload.get("E_mpa", 200000.0)),
             A_mm2=float(payload.get("A_mm2", 1000.0)),
             P_n=float(payload.get("P_kN", 1000.0)) * 1000.0,
         )
-    return create_assignment_5bar_truss(
-        L_mm=float(payload.get("L_mm", 1000.0)),
-        E_mpa=float(payload.get("E_mpa", 200000.0)),
-        A_mm2=float(payload.get("A_mm2", 2001.0)),
-        P_n=float(payload.get("P_kN", 208.0)) * 1000.0,
-        nu=float(payload.get("nu", 0.3)),
-        section_shape=str(payload.get("section_shape", "I_SECTION")),
-    )
+    else:
+        model = create_assignment_5bar_truss(
+            L_mm=float(payload.get("L_mm", 1000.0)),
+            E_mpa=float(payload.get("E_mpa", 200000.0)),
+            A_mm2=float(payload.get("A_mm2", 2001.0)),
+            P_n=float(payload.get("P_kN", 208.0)) * 1000.0,
+            nu=float(payload.get("nu", 0.3)),
+            section_shape=str(payload.get("section_shape", "I_SECTION")),
+        )
+
+    if "fixed_dofs_0" in payload and isinstance(payload["fixed_dofs_0"], list):
+        fd = [int(d) for d in payload["fixed_dofs_0"] if 0 <= int(d) < model.n_dofs]
+        if fd:
+            model.bc = np.array([[d + 1, 0.0] for d in sorted(set(fd))], dtype=float)
+        else:
+            model.bc = np.zeros((0, 2), dtype=float)
+    if "spring_k_nmm" in payload and isinstance(payload["spring_k_nmm"], list):
+        sk = [float(v) for v in payload["spring_k_nmm"]]
+        if len(sk) == model.n_dofs:
+            model.spring_k = np.array(sk, dtype=float)
+    return model
 
 
 def run_analysis_payload(payload: Dict[str, Any]) -> Dict[str, Any]:

@@ -34,6 +34,8 @@ class AnsysViewport3D extends StatefulWidget {
   final double probeXi;
   final bool surgicalMode;
   final bool darkMode;
+  final ConnectionDisplayMode connectionMode;
+  final ConnectionDetailType connectionType;
   final void Function(int elemIndex, double xi) onProbeChanged;
 
   const AnsysViewport3D({
@@ -47,6 +49,8 @@ class AnsysViewport3D extends StatefulWidget {
     required this.probeXi,
     required this.surgicalMode,
     required this.darkMode,
+    this.connectionMode = ConnectionDisplayMode.schematic,
+    this.connectionType = ConnectionDetailType.boltedGusset,
     required this.onProbeChanged,
   });
 
@@ -241,6 +245,8 @@ class _AnsysViewport3DState extends State<AnsysViewport3D> {
                       probeXi: widget.probeXi,
                       surgicalMode: widget.surgicalMode,
                       darkMode: widget.darkMode,
+                      connectionMode: widget.connectionMode,
+                      connectionType: widget.connectionType,
                     ),
                   ),
                 ),
@@ -465,6 +471,8 @@ class _Ansys3DPainter extends CustomPainter {
   final double probeXi;
   final bool surgicalMode;
   final bool darkMode;
+  final ConnectionDisplayMode connectionMode;
+  final ConnectionDetailType connectionType;
 
   _Ansys3DPainter({
     required this.model,
@@ -480,6 +488,8 @@ class _Ansys3DPainter extends CustomPainter {
     required this.probeXi,
     required this.surgicalMode,
     required this.darkMode,
+    this.connectionMode = ConnectionDisplayMode.schematic,
+    this.connectionType = ConnectionDetailType.boltedGusset,
   });
 
   /// Tạo danh sách điểm viền 2D (v, w) của mặt cắt ngang 3D theo hình dạng tiết diện
@@ -712,22 +722,26 @@ class _Ansys3DPainter extends CustomPainter {
       }
     }
 
-    // Khớp trụ 3D tại mỗi nút (tô màu chuyển vị nút thật khi đang xem Chuyển vị tổng ||u||)
-    final pinProfile = _crossSectionPolygon(SectionShape.solidRod, 68, 68);
-    for (int i = 0; i < model.nNodes; i++) {
-      final p = nodePos3D[i];
-      Color pinColor = const Color(0xFFCBD5E1);
-      if (field == ContourField.displacement) {
-        final uNode = math.sqrt(math.pow(result.uMm[2 * i], 2) + math.pow(result.uMm[2 * i + 1], 2)) * playbackFraction;
-        pinColor = ansysRainbowColor(((uNode - minVal) / span).clamp(0.0, 1.0));
+    // Khớp trụ 3D hoặc Chi tiết gia công chế tạo 3D tại từng nút!
+    if (connectionMode == ConnectionDisplayMode.fabrication) {
+      _addFabricationConnections3D(faces, nodePos3D);
+    } else {
+      final pinProfile = _crossSectionPolygon(SectionShape.solidRod, 68, 68);
+      for (int i = 0; i < model.nNodes; i++) {
+        final p = nodePos3D[i];
+        Color pinColor = const Color(0xFFCBD5E1);
+        if (field == ContourField.displacement) {
+          final uNode = math.sqrt(math.pow(result.uMm[2 * i], 2) + math.pow(result.uMm[2 * i + 1], 2)) * playbackFraction;
+          pinColor = ansysRainbowColor(((uNode - minVal) / span).clamp(0.0, 1.0));
+        }
+        _addPrismFaces(
+          faces,
+          _Vec3(p.x, p.y, -75),
+          _Vec3(p.x, p.y, 75),
+          pinProfile,
+          pinColor,
+        );
       }
-      _addPrismFaces(
-        faces,
-        _Vec3(p.x, p.y, -75),
-        _Vec3(p.x, p.y, 75),
-        pinProfile,
-        pinColor,
-      );
     }
 
     // 4. Sắp xếp Z-Buffer (từ xa tới gần) và đổ bóng Phong 3D + Gradient liên tục
@@ -788,6 +802,13 @@ class _Ansys3DPainter extends CustomPainter {
             ..strokeWidth = 0.85,
         );
       }
+    }
+
+    // 4b. Ký hiệu gối tựa 3D (Sơ đồ tính hoặc Chi tiết lò xo/neo bổ sung cho chế độ chi tiết chế tạo)
+    if (connectionMode == ConnectionDisplayMode.schematic) {
+      _drawSupports3D(canvas, nodePos3D);
+    } else {
+      _drawFabricationOverlays3D(canvas, nodePos3D);
     }
 
     // 5. Mũi tên lực ngoài P trong không gian 3D & mũi tên ứng suất nội tại mặt cắt phẫu thuật
@@ -871,6 +892,479 @@ class _Ansys3DPainter extends CustomPainter {
 
     // 8. Hệ trục tọa độ 3D Triad kiểu ANSYS ở góc dưới phải
     _drawCoordinateTriad(canvas, Offset(size.width - 56, size.height - 56));
+  }
+
+  /// Dựng khối hộp chữ nhật 3D theo trục toàn cục X, Y, Z (bản đế, sườn, móng bê tông)
+  void _addBox3D(
+    List<_Face3D> faces,
+    _Vec3 center,
+    double sx,
+    double sy,
+    double sz,
+    Color color, {
+    double alpha = 0.98,
+    Color edgeColor = const Color(0x880F172A),
+  }) {
+    final hx = 0.5 * sx, hy = 0.5 * sy, hz = 0.5 * sz;
+    final p000 = _Vec3(center.x - hx, center.y - hy, center.z - hz);
+    final p100 = _Vec3(center.x + hx, center.y - hy, center.z - hz);
+    final p110 = _Vec3(center.x + hx, center.y + hy, center.z - hz);
+    final p010 = _Vec3(center.x - hx, center.y + hy, center.z - hz);
+    final p001 = _Vec3(center.x - hx, center.y - hy, center.z + hz);
+    final p101 = _Vec3(center.x + hx, center.y - hy, center.z + hz);
+    final p111 = _Vec3(center.x + hx, center.y + hy, center.z + hz);
+    final p011 = _Vec3(center.x - hx, center.y + hy, center.z + hz);
+    final quads = [
+      [p001, p101, p111, p011], // +Z
+      [p100, p000, p010, p110], // -Z
+      [p000, p100, p101, p001], // -Y
+      [p110, p010, p011, p111], // +Y
+      [p000, p001, p011, p010], // -X
+      [p100, p110, p111, p101], // +X
+    ];
+    for (final q in quads) {
+      final d = q.map((v) => cam.toCameraSpace(v).z).reduce((a, b) => a + b) / 4.0;
+      faces.add(_Face3D(verts: q, baseColor: color, depth: d, alpha: alpha, edgeColor: edgeColor));
+    }
+  }
+
+  /// Đùn đa giác XY (bản mã cắt vát) thành tấm thép 3D dày [zMin, zMax]
+  void _addExtrudedPolyXY(
+    List<_Face3D> faces,
+    List<Offset> poly,
+    double zMin,
+    double zMax,
+    Color color, {
+    double alpha = 0.94,
+    Color edgeColor = const Color(0xAA93C5FD),
+  }) {
+    if (poly.length < 3) return;
+    final n = poly.length;
+    final back = [for (final pt in poly) _Vec3(pt.dx, pt.dy, zMin)];
+    final front = [for (final pt in poly) _Vec3(pt.dx, pt.dy, zMax)];
+    for (int i = 0; i < n; i++) {
+      final j = (i + 1) % n;
+      final q = [back[i], front[i], front[j], back[j]];
+      final d = q.map((v) => cam.toCameraSpace(v).z).reduce((a, b) => a + b) / 4.0;
+      faces.add(_Face3D(verts: q, baseColor: color, depth: d, alpha: alpha, edgeColor: edgeColor));
+    }
+    final dBack = back.map((v) => cam.toCameraSpace(v).z).reduce((a, b) => a + b) / n;
+    final dFront = front.map((v) => cam.toCameraSpace(v).z).reduce((a, b) => a + b) / n;
+    faces.add(_Face3D(verts: back.reversed.toList(), baseColor: color, depth: dBack, alpha: alpha, edgeColor: edgeColor));
+    faces.add(_Face3D(verts: front, baseColor: color, depth: dFront, alpha: alpha, edgeColor: edgeColor));
+  }
+
+  List<Offset> _convexHullXY(List<Offset> pts) {
+    if (pts.length <= 3) return pts;
+    final sorted = List<Offset>.from(pts)
+      ..sort((a, b) => a.dx != b.dx ? a.dx.compareTo(b.dx) : a.dy.compareTo(b.dy));
+    double cross(Offset o, Offset a, Offset b) =>
+        (a.dx - o.dx) * (b.dy - o.dy) - (a.dy - o.dy) * (b.dx - o.dx);
+    final lower = <Offset>[];
+    for (final p in sorted) {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower.last, p) <= 0) {
+        lower.removeLast();
+      }
+      lower.add(p);
+    }
+    final upper = <Offset>[];
+    for (final p in sorted.reversed) {
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper.last, p) <= 0) {
+        upper.removeLast();
+      }
+      upper.add(p);
+    }
+    lower.removeLast();
+    upper.removeLast();
+    return [...lower, ...upper];
+  }
+
+  /// Dựng toàn bộ chi tiết gia công chế tạo 3D tại các nút (bản mã, bu-lông/hàn/chốt & gối móng)
+  void _addFabricationConnections3D(List<_Face3D> faces, List<_Vec3> nodePos3D) {
+    double minX = double.infinity, maxX = -double.infinity;
+    double minY = double.infinity, maxY = -double.infinity;
+    for (final c in model.coords) {
+      minX = math.min(minX, c[0]);
+      maxX = math.max(maxX, c[0]);
+      minY = math.min(minY, c[1]);
+      maxY = math.max(maxY, c[1]);
+    }
+    final midX = 0.5 * (minX + maxX);
+    final midY = 0.5 * (minY + maxY);
+    final spanLen = math.max(maxX - minX, maxY - minY);
+    final reach = (spanLen * 0.105).clamp(110.0, 220.0);
+
+    // Mặt cắt lục giác bu-lông 3D (6 cạnh) & trục con lăn tròn 3D (10 cạnh)
+    final hexBoltProfile = [
+      for (int k = 0; k < 6; k++)
+        Offset(13.0 * math.cos(k * math.pi / 3.0), 13.0 * math.sin(k * math.pi / 3.0)),
+    ];
+    final rollerProfile = _crossSectionPolygon(SectionShape.solidRod, 44.0, 44.0);
+    final clevisPinProfile = _crossSectionPolygon(SectionShape.solidRod, 64.0, 64.0);
+
+    for (int i = 0; i < model.nNodes; i++) {
+      final p = nodePos3D[i];
+      final sup = i < model.nodeSupports.length ? model.nodeSupports[i] : NodeSupportType.free;
+      final isTop = model.coords[i][1] > midY + 1e-3;
+      final isRight = model.coords[i][0] > midX + 1e-3;
+
+      final hullPts = <Offset>[];
+      double maxHalfW = 52.0;
+
+      for (int e = 0; e < model.nElems; e++) {
+        final n1 = model.conn[e][0] - 1;
+        final n2 = model.conn[e][1] - 1;
+        if (n1 != i && n2 != i) continue;
+        final other = n1 == i ? n2 : n1;
+        final dir3 = (nodePos3D[other] - p).normalized();
+        final dir2 = Offset(dir3.x, dir3.y);
+        final perp2 = Offset(-dir2.dy, dir2.dx);
+        final dims = SectionDimensions.fromArea(model.sectionShape, model.areas[e]);
+        final hw = (dims.height * 0.55).clamp(45.0, 92.0);
+        maxHalfW = math.max(maxHalfW, hw);
+
+        final p2 = Offset(p.x, p.y);
+        hullPts.add(p2 + dir2 * reach + perp2 * (hw + 14.0));
+        hullPts.add(p2 + dir2 * reach - perp2 * (hw + 14.0));
+        hullPts.add(p2 + perp2 * (hw + 10.0));
+        hullPts.add(p2 - perp2 * (hw + 10.0));
+
+        // Chi tiết liên kết đầu thanh: Bu-lông lục giác 3D / Đường hàn góc 3D / Chốt Clevis 3D
+        if (connectionType == ConnectionDetailType.boltedGusset) {
+          for (final dAlong in [reach * 0.44, reach * 0.78]) {
+            for (final off in [-hw * 0.48, hw * 0.48]) {
+              final bx = p.x + dir2.dx * dAlong + perp2.dx * off;
+              final by = p.y + dir2.dy * dAlong + perp2.dy * off;
+              // Dựng riêng mũ bu-lông mặt trước (+Z) và đai ốc mặt sau (-Z) nhô nổi trên bề mặt bản mã!
+              _addPrismFaces(
+                faces,
+                _Vec3(bx, by, 60.0),
+                _Vec3(bx, by, 78.0),
+                hexBoltProfile,
+                const Color(0xFFFACC15),
+                alpha: 1.0,
+              );
+              _addPrismFaces(
+                faces,
+                _Vec3(bx, by, -78.0),
+                _Vec3(bx, by, -60.0),
+                hexBoltProfile,
+                const Color(0xFFEAB308),
+                alpha: 1.0,
+              );
+            }
+          }
+        } else if (connectionType == ConnectionDetailType.weldedGusset) {
+          // 2 dải đường hàn góc 3D màu cam sáng nổi trên hai mặt tiếp giáp bản mã
+          final weldProfile = [
+            const Offset(-8, -8),
+            const Offset(8, -8),
+            const Offset(8, 8),
+            const Offset(-8, 8),
+          ];
+          for (final sgn in [-1.0, 1.0]) {
+            final wa = _Vec3(
+              p.x + dir2.dx * (reach * 0.22) + perp2.dx * (hw * sgn),
+              p.y + dir2.dy * (reach * 0.22) + perp2.dy * (hw * sgn),
+              64.0,
+            );
+            final wb = _Vec3(
+              p.x + dir2.dx * (reach * 0.94) + perp2.dx * (hw * sgn),
+              p.y + dir2.dy * (reach * 0.94) + perp2.dy * (hw * sgn),
+              64.0,
+            );
+            _addPrismFaces(faces, wa, wb, weldProfile, const Color(0xFFF97316));
+            _addPrismFaces(
+              faces,
+              _Vec3(wa.x, wa.y, -64.0),
+              _Vec3(wb.x, wb.y, -64.0),
+              weldProfile,
+              const Color(0xFFF97316),
+            );
+          }
+        }
+      }
+
+      // Kéo dài tai bản mã nối xuống/lên bản đế nếu nút có gối tựa
+      if (sup != NodeSupportType.free) {
+        final sgnY = isTop ? 1.0 : -1.0;
+        if (sup == NodeSupportType.rollerY || sup == NodeSupportType.springX) {
+          final sgnX = isRight ? 1.0 : -1.0;
+          hullPts.add(Offset(p.x + sgnX * 95, p.y - 68));
+          hullPts.add(Offset(p.x + sgnX * 95, p.y + 68));
+        } else {
+          hullPts.add(Offset(p.x - 85, p.y + sgnY * 95));
+          hullPts.add(Offset(p.x + 85, p.y + sgnY * 95));
+        }
+      }
+
+      // Đùn 2 tấm bản mã kẹp 3D màu xanh công nghiệp ở mặt trước & mặt sau nút
+      final hull = _convexHullXY(hullPts);
+      _addExtrudedPolyXY(faces, hull, 44.0, 60.0, const Color(0xFF1D4ED8), alpha: 0.90);
+      _addExtrudedPolyXY(faces, hull, -60.0, -44.0, const Color(0xFF1E40AF), alpha: 0.90);
+
+      // Chốt bản lề Clevis 3D Ø60 nếu chọn kiểu Tai chốt
+      if (connectionType == ConnectionDetailType.pinnedClevis) {
+        _addPrismFaces(
+          faces,
+          _Vec3(p.x, p.y, -88.0),
+          _Vec3(p.x, p.y, 88.0),
+          clevisPinProfile,
+          const Color(0xFFF59E0B),
+        );
+      }
+
+      // CHI TIẾT GỐI TỰA CHẾ TẠO 3D (BẢN ĐẾ, SƯỜN, BU-LÔNG NEO, MÓNG BÊ TÔNG / CON LĂN / LÒ XO)
+      const steelCol = Color(0xFF64748B);
+      const concreteCol = Color(0xFF475569);
+      const anchorCol = Color(0xFFFACC15);
+
+      if (sup == NodeSupportType.pin) {
+        final bpY = p.y - 108.0;
+        // Bản đế thép dày BP + 2 sườn tăng cứng + 4 bu-lông neo M24 + Khối móng bê tông 3D
+        _addBox3D(faces, _Vec3(p.x, bpY, 0), 270, 26, 180, steelCol);
+        _addBox3D(faces, _Vec3(p.x - 75, bpY + 42, 0), 16, 62, 130, const Color(0xFF475569));
+        _addBox3D(faces, _Vec3(p.x + 75, bpY + 42, 0), 16, 62, 130, const Color(0xFF475569));
+        _addBox3D(faces, _Vec3(p.x, bpY - 52, 0), 350, 78, 240, concreteCol);
+        for (final ax in [-105.0, 105.0]) {
+          for (final az in [-62.0, 62.0]) {
+            _addBox3D(faces, _Vec3(p.x + ax, bpY + 12, az), 18, 52, 18, anchorCol);
+          }
+        }
+      } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX) {
+        final sgn = isTop ? 1.0 : -1.0;
+        final p1Y = p.y + sgn * 102.0;
+        final rolY = p.y + sgn * 136.0;
+        final p2Y = p.y + sgn * 170.0;
+        final concY = p.y + sgn * 212.0;
+        _addBox3D(faces, _Vec3(p.x, p1Y, 0), 230, 22, 165, steelCol);
+        for (final rx in [-58.0, 58.0]) {
+          _addPrismFaces(
+            faces,
+            _Vec3(p.x + rx, rolY, -78.0),
+            _Vec3(p.x + rx, rolY, 78.0),
+            rollerProfile,
+            const Color(0xFF38BDF8),
+          );
+        }
+        _addBox3D(faces, _Vec3(p.x, p2Y, 0), 270, 24, 185, steelCol);
+        _addBox3D(faces, _Vec3(p.x, concY, 0), 330, 60, 230, concreteCol);
+      } else if (sup == NodeSupportType.rollerY) {
+        final sgn = isRight ? 1.0 : -1.0;
+        final p1X = p.x + sgn * 102.0;
+        final rolX = p.x + sgn * 136.0;
+        final p2X = p.x + sgn * 170.0;
+        final concX = p.x + sgn * 212.0;
+        _addBox3D(faces, _Vec3(p1X, p.y, 0), 22, 230, 165, steelCol);
+        for (final ry in [-58.0, 58.0]) {
+          _addPrismFaces(
+            faces,
+            _Vec3(rolX, p.y + ry, -78.0),
+            _Vec3(rolX, p.y + ry, 78.0),
+            rollerProfile,
+            const Color(0xFF38BDF8),
+          );
+        }
+        _addBox3D(faces, _Vec3(p2X, p.y, 0), 24, 270, 185, steelCol);
+        _addBox3D(faces, _Vec3(concX, p.y, 0), 60, 330, 230, concreteCol);
+      }
+
+      if (sup.hasSpringY) {
+        final sgn = isTop ? 1.0 : -1.0;
+        final p0y = model.coords[i][1];
+        _addBox3D(faces, _Vec3(p.x, p.y + sgn * 96.0, 0), 210, 20, 155, steelCol);
+        _addBox3D(faces, _Vec3(p.x, p0y + sgn * 195.0, 0), 245, 22, 180, steelCol);
+        _addBox3D(faces, _Vec3(p.x, p0y + sgn * 234.0, 0), 300, 56, 220, concreteCol);
+      }
+      if (sup.hasSpringX) {
+        final sgn = isRight ? 1.0 : -1.0;
+        final p0x = model.coords[i][0];
+        _addBox3D(faces, _Vec3(p.x + sgn * 96.0, p.y, 0), 20, 210, 155, steelCol);
+        _addBox3D(faces, _Vec3(p0x + sgn * 195.0, p.y, 0), 22, 245, 180, steelCol);
+        _addBox3D(faces, _Vec3(p0x + sgn * 234.0, p.y, 0), 56, 300, 220, concreteCol);
+      }
+    }
+  }
+
+  /// Vẽ cuộn lò xo thép công nghiệp 3D (nối giữa tấm ép và bản đế) cho chế độ chi tiết chế tạo
+  void _drawFabricationOverlays3D(Canvas canvas, List<_Vec3> nodePos3D) {
+    double minX = double.infinity, maxX = -double.infinity;
+    double minY = double.infinity, maxY = -double.infinity;
+    for (final c in model.coords) {
+      minX = math.min(minX, c[0]);
+      maxX = math.max(maxX, c[0]);
+      minY = math.min(minY, c[1]);
+      maxY = math.max(maxY, c[1]);
+    }
+    final midX = 0.5 * (minX + maxX);
+    final midY = 0.5 * (minY + maxY);
+    final sprPaint = Paint()
+      ..color = const Color(0xFFFBBF24)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.6
+      ..strokeJoin = StrokeJoin.round;
+
+    void drawCoil3D(_Vec3 a, _Vec3 b, _Vec3 perp) {
+      final path = Path();
+      final s0 = cam.project(a).pt;
+      path.moveTo(s0.dx, s0.dy);
+      for (int c = 0; c < 5; c++) {
+        final t1 = (c + 0.25) / 5.0;
+        final t2 = (c + 0.75) / 5.0;
+        final q1 = cam.project(a + (b - a) * t1 + perp * 22.0).pt;
+        final q2 = cam.project(a + (b - a) * t2 - perp * 22.0).pt;
+        path.lineTo(q1.dx, q1.dy);
+        path.lineTo(q2.dx, q2.dy);
+      }
+      final s1 = cam.project(b).pt;
+      path.lineTo(s1.dx, s1.dy);
+      canvas.drawPath(path, sprPaint);
+    }
+
+    for (int i = 0; i < model.nNodes; i++) {
+      final sup = i < model.nodeSupports.length ? model.nodeSupports[i] : NodeSupportType.free;
+      if (!sup.hasSpring) continue;
+      final p = nodePos3D[i];
+      final isTop = model.coords[i][1] > midY + 1e-3;
+      final isRight = model.coords[i][0] > midX + 1e-3;
+      if (sup.hasSpringY) {
+        final sgn = isTop ? 1.0 : -1.0;
+        final p0y = model.coords[i][1];
+        for (final off in [-48.0, 48.0]) {
+          drawCoil3D(
+            _Vec3(p.x + off, p.y + sgn * 106.0, 0),
+            _Vec3(p.x + off, p0y + sgn * 184.0, 0),
+            const _Vec3(1, 0, 0),
+          );
+        }
+      }
+      if (sup.hasSpringX) {
+        final sgn = isRight ? 1.0 : -1.0;
+        final p0x = model.coords[i][0];
+        for (final off in [-48.0, 48.0]) {
+          drawCoil3D(
+            _Vec3(p.x + sgn * 106.0, p.y + off, 0),
+            _Vec3(p0x + sgn * 184.0, p.y + off, 0),
+            const _Vec3(0, 1, 0),
+          );
+        }
+      }
+    }
+  }
+
+  void _drawSupports3D(Canvas canvas, List<_Vec3> nodePos3D) {
+    final supStroke = Paint()
+      ..color = const Color(0xFF94A3B8)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    final supFill = Paint()..color = const Color(0xCC1E293B);
+    final springStroke = Paint()
+      ..color = const Color(0xFFFBBF24)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeJoin = StrokeJoin.round;
+
+    double minX = double.infinity, maxX = -double.infinity;
+    double minY = double.infinity, maxY = -double.infinity;
+    for (final c in model.coords) {
+      minX = math.min(minX, c[0]);
+      maxX = math.max(maxX, c[0]);
+      minY = math.min(minY, c[1]);
+      maxY = math.max(maxY, c[1]);
+    }
+    final midX = 0.5 * (minX + maxX);
+    final midY = 0.5 * (minY + maxY);
+    final unit = (math.max(maxX - minX, maxY - minY) * 0.085).clamp(55.0, 140.0);
+
+    void drawSpring3D(_Vec3 a3, _Vec3 b3, _Vec3 perp3, String tag) {
+      final path = Path();
+      final s0 = cam.project(a3).pt;
+      path.moveTo(s0.dx, s0.dy);
+      const coils = 5;
+      final lead = 0.14;
+      final amp = unit * 0.28;
+      final pLeadA = cam.project(a3 + (b3 - a3) * lead).pt;
+      path.lineTo(pLeadA.dx, pLeadA.dy);
+      for (int c = 0; c < coils; c++) {
+        final t1 = lead + (1.0 - 2 * lead) * (c + 0.25) / coils;
+        final t2 = lead + (1.0 - 2 * lead) * (c + 0.75) / coils;
+        final q1 = cam.project(a3 + (b3 - a3) * t1 + perp3 * amp).pt;
+        final q2 = cam.project(a3 + (b3 - a3) * t2 - perp3 * amp).pt;
+        path.lineTo(q1.dx, q1.dy);
+        path.lineTo(q2.dx, q2.dy);
+      }
+      final pLeadB = cam.project(a3 + (b3 - a3) * (1.0 - lead)).pt;
+      final sEnd = cam.project(b3).pt;
+      path.lineTo(pLeadB.dx, pLeadB.dy);
+      path.lineTo(sEnd.dx, sEnd.dy);
+      canvas.drawPath(path, springStroke);
+      final g1 = cam.project(b3 - perp3 * (unit * 0.65)).pt;
+      final g2 = cam.project(b3 + perp3 * (unit * 0.65)).pt;
+      canvas.drawLine(g1, g2, supStroke);
+      _drawLabel(canvas, sEnd + const Offset(6, -6), tag, const Color(0xFFFBBF24));
+    }
+
+    for (int i = 0; i < model.nNodes; i++) {
+      final sup = i < model.nodeSupports.length ? model.nodeSupports[i] : NodeSupportType.free;
+      if (sup == NodeSupportType.free) continue;
+      final p = nodePos3D[i];
+      final p0 = _Vec3(model.coords[i][0], model.coords[i][1], 0.0);
+      final isTop = model.coords[i][1] > midY + 1e-3;
+      final isRight = model.coords[i][0] > midX + 1e-3;
+
+      if (sup == NodeSupportType.pin) {
+        final a = cam.project(p + _Vec3(0, -unit * 0.25, 0)).pt;
+        final b = cam.project(p + _Vec3(-unit * 0.65, -unit * 1.15, 0)).pt;
+        final c = cam.project(p + _Vec3(unit * 0.65, -unit * 1.15, 0)).pt;
+        final tri = Path()..moveTo(a.dx, a.dy)..lineTo(b.dx, b.dy)..lineTo(c.dx, c.dy)..close();
+        canvas.drawPath(tri, supFill);
+        canvas.drawPath(tri, supStroke);
+        final g1 = cam.project(p + _Vec3(-unit * 0.9, -unit * 1.2, 0)).pt;
+        final g2 = cam.project(p + _Vec3(unit * 0.9, -unit * 1.2, 0)).pt;
+        canvas.drawLine(g1, g2, supStroke);
+      } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX) {
+        final sgn = isTop ? 1.0 : -1.0;
+        final a = cam.project(p + _Vec3(0, sgn * unit * 0.25, 0)).pt;
+        final b = cam.project(p + _Vec3(-unit * 0.6, sgn * unit * 1.05, 0)).pt;
+        final c = cam.project(p + _Vec3(unit * 0.6, sgn * unit * 1.05, 0)).pt;
+        final tri = Path()..moveTo(a.dx, a.dy)..lineTo(b.dx, b.dy)..lineTo(c.dx, c.dy)..close();
+        canvas.drawPath(tri, supFill);
+        canvas.drawPath(tri, supStroke);
+        final w1 = cam.project(p + _Vec3(-unit * 0.3, sgn * unit * 1.28, 0)).pt;
+        final w2 = cam.project(p + _Vec3(unit * 0.3, sgn * unit * 1.28, 0)).pt;
+        canvas.drawCircle(w1, 3.8, Paint()..color = const Color(0xFF38BDF8));
+        canvas.drawCircle(w2, 3.8, Paint()..color = const Color(0xFF38BDF8));
+        final g1 = cam.project(p + _Vec3(-unit * 0.85, sgn * unit * 1.5, 0)).pt;
+        final g2 = cam.project(p + _Vec3(unit * 0.85, sgn * unit * 1.5, 0)).pt;
+        canvas.drawLine(g1, g2, supStroke);
+      } else if (sup == NodeSupportType.rollerY) {
+        final sgn = isRight ? 1.0 : -1.0;
+        final a = cam.project(p + _Vec3(sgn * unit * 0.25, 0, 0)).pt;
+        final b = cam.project(p + _Vec3(sgn * unit * 1.05, -unit * 0.6, 0)).pt;
+        final c = cam.project(p + _Vec3(sgn * unit * 1.05, unit * 0.6, 0)).pt;
+        final tri = Path()..moveTo(a.dx, a.dy)..lineTo(b.dx, b.dy)..lineTo(c.dx, c.dy)..close();
+        canvas.drawPath(tri, supFill);
+        canvas.drawPath(tri, supStroke);
+        final w1 = cam.project(p + _Vec3(sgn * unit * 1.28, -unit * 0.3, 0)).pt;
+        final w2 = cam.project(p + _Vec3(sgn * unit * 1.28, unit * 0.3, 0)).pt;
+        canvas.drawCircle(w1, 3.8, Paint()..color = const Color(0xFF38BDF8));
+        canvas.drawCircle(w2, 3.8, Paint()..color = const Color(0xFF38BDF8));
+        final g1 = cam.project(p + _Vec3(sgn * unit * 1.5, -unit * 0.85, 0)).pt;
+        final g2 = cam.project(p + _Vec3(sgn * unit * 1.5, unit * 0.85, 0)).pt;
+        canvas.drawLine(g1, g2, supStroke);
+      }
+
+      if (sup.hasSpringY) {
+        final sgn = isTop ? 1.0 : -1.0;
+        final anchorY = _Vec3(p.x, p0.y + sgn * unit * 1.8, 0.0);
+        drawSpring3D(p + _Vec3(0, sgn * unit * 0.25, 0), anchorY, const _Vec3(1, 0, 0), 'kᵧ');
+      }
+      if (sup.hasSpringX) {
+        final sgn = isRight ? 1.0 : -1.0;
+        final anchorX = _Vec3(p0.x + sgn * unit * 1.8, p.y, 0.0);
+        drawSpring3D(p + _Vec3(sgn * unit * 0.25, 0, 0), anchorX, const _Vec3(0, 1, 0), 'kₓ');
+      }
+    }
   }
 
   void _drawCoordinateTriad(Canvas canvas, Offset origin) {

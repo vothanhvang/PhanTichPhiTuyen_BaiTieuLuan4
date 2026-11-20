@@ -85,6 +85,8 @@ class PythonBridge {
         'P_kN': model.basePKn,
         'nu': model.nu,
         'section_shape': model.sectionShape.code,
+        'fixed_dofs_0': model.fixedDofs0,
+        'spring_k_nmm': model.springKPerDofNmm,
         'load_factor': loadFactor,
         'n_steps': nSteps,
       };

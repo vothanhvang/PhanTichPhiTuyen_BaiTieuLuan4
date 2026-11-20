@@ -27,6 +27,8 @@ class AnsysViewport2D extends StatefulWidget {
   final double probeXi;
   final bool surgicalMode;
   final bool darkMode;
+  final ConnectionDisplayMode connectionMode;
+  final ConnectionDetailType connectionType;
   final void Function(int elemIndex, double xi) onProbeChanged;
 
   const AnsysViewport2D({
@@ -40,6 +42,8 @@ class AnsysViewport2D extends StatefulWidget {
     required this.probeXi,
     required this.surgicalMode,
     required this.darkMode,
+    this.connectionMode = ConnectionDisplayMode.schematic,
+    this.connectionType = ConnectionDetailType.boltedGusset,
     required this.onProbeChanged,
   });
 
@@ -226,6 +230,8 @@ class _AnsysViewport2DState extends State<AnsysViewport2D> {
                       probeXi: widget.probeXi,
                       surgicalMode: widget.surgicalMode,
                       darkMode: widget.darkMode,
+                      connectionMode: widget.connectionMode,
+                      connectionType: widget.connectionType,
                     ),
                   ),
                 ),
@@ -336,6 +342,8 @@ class _Ansys2DPainter extends CustomPainter {
   final double probeXi;
   final bool surgicalMode;
   final bool darkMode;
+  final ConnectionDisplayMode connectionMode;
+  final ConnectionDetailType connectionType;
 
   _Ansys2DPainter({
     required this.model,
@@ -351,6 +359,8 @@ class _Ansys2DPainter extends CustomPainter {
     required this.probeXi,
     required this.surgicalMode,
     required this.darkMode,
+    this.connectionMode = ConnectionDisplayMode.schematic,
+    this.connectionType = ConnectionDetailType.boltedGusset,
   });
 
   @override
@@ -496,7 +506,10 @@ class _Ansys2DPainter extends CustomPainter {
       );
     }
 
-    // 4. Vẽ gối tựa & mũi tên ngoại lực P
+    // 4. Vẽ liên kết gối tựa (Sơ đồ tính hoặc Chi tiết gia công chế tạo) & ngoại lực P
+    if (connectionMode == ConnectionDisplayMode.fabrication) {
+      _drawFabricationNodes2D(canvas);
+    }
     _drawSupportsAndLoads(canvas);
 
     // 5. Vẽ nút khớp 2D (tô màu & ghi chuyển vị nút thật khi đang xem Chuyển vị tổng ||u||)
@@ -576,21 +589,220 @@ class _Ansys2DPainter extends CustomPainter {
     );
   }
 
-  void _drawSupportsAndLoads(Canvas canvas) {
-    final fixed = model.fixedDofs0.toSet();
-    final supPaint = Paint()
-      ..color = const Color(0xFF94A3B8)
+  /// Vẽ bản mã vát góc, bu-lông lục giác / đường hàn cam / chốt Clevis & bản đế móng trên 2D chế tạo
+  void _drawFabricationNodes2D(Canvas canvas) {
+    final gussetFill = Paint()..color = darkMode ? const Color(0xCC1D4ED8) : const Color(0xCC93C5FD);
+    final gussetEdge = Paint()
+      ..color = const Color(0xFF38BDF8)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
+      ..strokeWidth = 1.6;
+    final plateFill = Paint()..color = const Color(0xFF64748B);
+    final concFill = Paint()..color = darkMode ? const Color(0xFF334155) : const Color(0xFFCBD5E1);
+    final edgeStroke = Paint()
+      ..color = darkMode ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+
+    double minX = double.infinity, maxX = -double.infinity;
+    double minY = double.infinity, maxY = -double.infinity;
+    for (final c in model.coords) {
+      minX = math.min(minX, c[0]);
+      maxX = math.max(maxX, c[0]);
+      minY = math.min(minY, c[1]);
+      maxY = math.max(maxY, c[1]);
+    }
+    final midX = 0.5 * (minX + maxX);
+    final midY = 0.5 * (minY + maxY);
+
+    List<Offset> hull2D(List<Offset> pts) {
+      if (pts.length <= 3) return pts;
+      final s = List<Offset>.from(pts)
+        ..sort((a, b) => a.dx != b.dx ? a.dx.compareTo(b.dx) : a.dy.compareTo(b.dy));
+      double cr(Offset o, Offset a, Offset b) => (a.dx - o.dx) * (b.dy - o.dy) - (a.dy - o.dy) * (b.dx - o.dx);
+      final lo = <Offset>[];
+      for (final p in s) {
+        while (lo.length >= 2 && cr(lo[lo.length - 2], lo.last, p) <= 0) {
+          lo.removeLast();
+        }
+        lo.add(p);
+      }
+      final hi = <Offset>[];
+      for (final p in s.reversed) {
+        while (hi.length >= 2 && cr(hi[hi.length - 2], hi.last, p) <= 0) {
+          hi.removeLast();
+        }
+        hi.add(p);
+      }
+      lo.removeLast();
+      hi.removeLast();
+      return [...lo, ...hi];
+    }
 
     for (int i = 0; i < model.nNodes; i++) {
-      final fxLock = fixed.contains(2 * i);
-      final fyLock = fixed.contains(2 * i + 1);
       final p = tf.toScreen(
         model.coords[i][0] + deformScale * result.uMm[2 * i],
         model.coords[i][1] + deformScale * result.uMm[2 * i + 1],
       );
-      if (fxLock && fyLock) {
+      final sup = i < model.nodeSupports.length ? model.nodeSupports[i] : NodeSupportType.free;
+      final isTop = model.coords[i][1] > midY + 1e-3;
+      final isRight = model.coords[i][0] > midX + 1e-3;
+
+      final pts = <Offset>[];
+      final dirs = <Offset>[];
+      for (int e = 0; e < model.nElems; e++) {
+        final n1 = model.conn[e][0] - 1;
+        final n2 = model.conn[e][1] - 1;
+        if (n1 != i && n2 != i) continue;
+        final other = n1 == i ? n2 : n1;
+        final q = tf.toScreen(
+          model.coords[other][0] + deformScale * result.uMm[2 * other],
+          model.coords[other][1] + deformScale * result.uMm[2 * other + 1],
+        );
+        final v = q - p;
+        final len = v.distance;
+        if (len < 1e-3) continue;
+        final u = v / len;
+        final perp = Offset(-u.dy, u.dx);
+        dirs.add(u);
+        const reachPx = 38.0;
+        const hw = 13.0;
+        pts.add(p + u * reachPx + perp * hw);
+        pts.add(p + u * reachPx - perp * hw);
+        pts.add(p + perp * hw);
+        pts.add(p - perp * hw);
+      }
+      final hull = hull2D(pts);
+      if (hull.length >= 3) {
+        final gp = Path()..moveTo(hull.first.dx, hull.first.dy);
+        for (int k = 1; k < hull.length; k++) {
+          gp.lineTo(hull[k].dx, hull[k].dy);
+        }
+        gp.close();
+        canvas.drawPath(gp, gussetFill);
+        canvas.drawPath(gp, gussetEdge);
+      }
+      // Vẽ bu-lông vàng / đường hàn cam / chốt Clevis trên mỗi đầu thanh 2D
+      for (final u in dirs) {
+        final perp = Offset(-u.dy, u.dx);
+        if (connectionType == ConnectionDetailType.boltedGusset) {
+          for (final d in [18.0, 30.0]) {
+            for (final off in [-5.5, 5.5]) {
+              final bp = p + u * d + perp * off;
+              canvas.drawCircle(bp, 2.7, Paint()..color = const Color(0xFFFACC15));
+              canvas.drawCircle(bp, 2.7, Paint()..color = const Color(0xFF0F172A)..style = PaintingStyle.stroke..strokeWidth = 0.8);
+            }
+          }
+        } else if (connectionType == ConnectionDetailType.weldedGusset) {
+          final wp = Paint()..color = const Color(0xFFF97316)..strokeWidth = 3.0..strokeCap = StrokeCap.round;
+          canvas.drawLine(p + u * 10 + perp * 8.5, p + u * 35 + perp * 8.5, wp);
+          canvas.drawLine(p + u * 10 - perp * 8.5, p + u * 35 - perp * 8.5, wp);
+        }
+      }
+      if (connectionType == ConnectionDetailType.pinnedClevis) {
+        canvas.drawCircle(p, 10.0, Paint()..color = const Color(0xFFF59E0B));
+        canvas.drawCircle(p, 10.0, edgeStroke);
+      }
+      // Bệ bản đế + bu-lông neo + khối móng bê tông cho chế độ chi tiết chế tạo 2D
+      if (sup == NodeSupportType.pin) {
+        final bp = Rect.fromCenter(center: Offset(p.dx, p.dy + 22), width: 42, height: 6);
+        final mc = Rect.fromCenter(center: Offset(p.dx, p.dy + 34), width: 56, height: 18);
+        canvas.drawRect(mc, concFill);
+        canvas.drawRect(mc, edgeStroke);
+        canvas.drawRect(bp, plateFill);
+        canvas.drawRect(bp, edgeStroke);
+        for (final ax in [-14.0, 14.0]) {
+          canvas.drawLine(Offset(p.dx + ax, p.dy + 16), Offset(p.dx + ax, p.dy + 36),
+              Paint()..color = const Color(0xFFFACC15)..strokeWidth = 2.0);
+        }
+      } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX) {
+        final sgn = isTop ? -1.0 : 1.0;
+        final mc = Rect.fromCenter(center: Offset(p.dx, p.dy + sgn * 36), width: 50, height: 12);
+        canvas.drawRect(mc, concFill);
+        canvas.drawRect(mc, edgeStroke);
+      } else if (sup == NodeSupportType.rollerY) {
+        final sgn = isRight ? 1.0 : -1.0;
+        final mc = Rect.fromCenter(center: Offset(p.dx + sgn * 36, p.dy), width: 12, height: 50);
+        canvas.drawRect(mc, concFill);
+        canvas.drawRect(mc, edgeStroke);
+      }
+    }
+  }
+
+  void _drawSupportsAndLoads(Canvas canvas) {
+    final supPaint = Paint()
+      ..color = const Color(0xFF94A3B8)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    final springPaint = Paint()
+      ..color = const Color(0xFFFBBF24)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeJoin = StrokeJoin.round;
+
+    double minX = double.infinity, maxX = -double.infinity;
+    double minY = double.infinity, maxY = -double.infinity;
+    for (final c in model.coords) {
+      minX = math.min(minX, c[0]);
+      maxX = math.max(maxX, c[0]);
+      minY = math.min(minY, c[1]);
+      maxY = math.max(maxY, c[1]);
+    }
+    final midX = 0.5 * (minX + maxX);
+    final midY = 0.5 * (minY + maxY);
+
+    void drawGroundHatch(Offset a, Offset b, Offset dirOut) {
+      canvas.drawLine(a, b, supPaint);
+      final v = b - a;
+      final len = v.distance;
+      if (len < 1e-3) return;
+      final tUnit = v / len;
+      final nUnit = dirOut / dirOut.distance;
+      for (double s = 3.0; s <= len - 2.0; s += 6.5) {
+        final base = a + tUnit * s;
+        canvas.drawLine(base, base + nUnit * 6.0 - tUnit * 4.0, supPaint..strokeWidth = 1.4);
+      }
+      supPaint.strokeWidth = 2.0;
+    }
+
+    void drawSpring2D(Offset pNode, Offset pAnchor, String tag) {
+      final d = pAnchor - pNode;
+      final len = d.distance;
+      if (len < 6.0) return;
+      final u = d / len;
+      final n = Offset(-u.dy, u.dx);
+      const lead = 7.0;
+      const coils = 5;
+      const amp = 6.0;
+      final body = math.max(6.0, len - 2 * lead);
+      final path = Path()
+        ..moveTo(pNode.dx, pNode.dy)
+        ..lineTo(pNode.dx + u.dx * lead, pNode.dy + u.dy * lead);
+      for (int c = 0; c < coils; c++) {
+        final s1 = lead + (c + 0.25) / coils * body;
+        final s2 = lead + (c + 0.75) / coils * body;
+        final q1 = pNode + u * s1 + n * amp;
+        final q2 = pNode + u * s2 - n * amp;
+        path.lineTo(q1.dx, q1.dy);
+        path.lineTo(q2.dx, q2.dy);
+      }
+      path.lineTo(pAnchor.dx - u.dx * lead, pAnchor.dy - u.dy * lead);
+      path.lineTo(pAnchor.dx, pAnchor.dy);
+      canvas.drawPath(path, springPaint);
+      drawGroundHatch(pAnchor - n * 13.0, pAnchor + n * 13.0, u);
+      _drawText(canvas, pAnchor + n * 10.0 - const Offset(6, 6), tag, const Color(0xFFFBBF24), 9.5, bold: true);
+    }
+
+    for (int i = 0; i < model.nNodes; i++) {
+      final sup = i < model.nodeSupports.length ? model.nodeSupports[i] : NodeSupportType.free;
+      final p0 = tf.toScreen(model.coords[i][0], model.coords[i][1]);
+      final p = tf.toScreen(
+        model.coords[i][0] + deformScale * result.uMm[2 * i],
+        model.coords[i][1] + deformScale * result.uMm[2 * i + 1],
+      );
+      final isTop = model.coords[i][1] > midY + 1e-3;
+      final isRight = model.coords[i][0] > midX + 1e-3;
+
+      if (sup == NodeSupportType.pin) {
         final tri = Path()
           ..moveTo(p.dx, p.dy + 7)
           ..lineTo(p.dx - 13, p.dy + 24)
@@ -598,19 +810,50 @@ class _Ansys2DPainter extends CustomPainter {
           ..close();
         canvas.drawPath(tri, Paint()..color = const Color(0xFF334155));
         canvas.drawPath(tri, supPaint);
-        canvas.drawLine(Offset(p.dx - 18, p.dy + 25), Offset(p.dx + 18, p.dy + 25), supPaint);
-      } else if (fyLock) {
-        // Con lăn phía trên (như Nút 4 trong đề bài)
+        drawGroundHatch(Offset(p.dx - 18, p.dy + 25), Offset(p.dx + 18, p.dy + 25), const Offset(0, 1));
+      } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX) {
+        final sgn = isTop ? -1.0 : 1.0;
         final tri = Path()
-          ..moveTo(p.dx, p.dy - 7)
-          ..lineTo(p.dx - 12, p.dy - 22)
-          ..lineTo(p.dx + 12, p.dy - 22)
+          ..moveTo(p.dx, p.dy + sgn * 7)
+          ..lineTo(p.dx - 12, p.dy + sgn * 22)
+          ..lineTo(p.dx + 12, p.dy + sgn * 22)
           ..close();
         canvas.drawPath(tri, Paint()..color = const Color(0xFF334155));
         canvas.drawPath(tri, supPaint);
-        canvas.drawCircle(Offset(p.dx - 6, p.dy - 26), 3.5, supPaint);
-        canvas.drawCircle(Offset(p.dx + 6, p.dy - 26), 3.5, supPaint);
-        canvas.drawLine(Offset(p.dx - 18, p.dy - 30), Offset(p.dx + 18, p.dy - 30), supPaint);
+        canvas.drawCircle(Offset(p.dx - 6, p.dy + sgn * 26), 3.5, supPaint);
+        canvas.drawCircle(Offset(p.dx + 6, p.dy + sgn * 26), 3.5, supPaint);
+        drawGroundHatch(
+          Offset(p.dx - 18, p.dy + sgn * 30),
+          Offset(p.dx + 18, p.dy + sgn * 30),
+          Offset(0, sgn),
+        );
+      } else if (sup == NodeSupportType.rollerY) {
+        final sgn = isRight ? 1.0 : -1.0;
+        final tri = Path()
+          ..moveTo(p.dx + sgn * 7, p.dy)
+          ..lineTo(p.dx + sgn * 22, p.dy - 12)
+          ..lineTo(p.dx + sgn * 22, p.dy + 12)
+          ..close();
+        canvas.drawPath(tri, Paint()..color = const Color(0xFF334155));
+        canvas.drawPath(tri, supPaint);
+        canvas.drawCircle(Offset(p.dx + sgn * 26, p.dy - 6), 3.5, supPaint);
+        canvas.drawCircle(Offset(p.dx + sgn * 26, p.dy + 6), 3.5, supPaint);
+        drawGroundHatch(
+          Offset(p.dx + sgn * 30, p.dy - 18),
+          Offset(p.dx + sgn * 30, p.dy + 18),
+          Offset(sgn, 0),
+        );
+      }
+
+      if (sup.hasSpringY) {
+        final sgn = isTop ? -1.0 : 1.0;
+        final anchorY = Offset(p.dx, p0.dy + sgn * 42.0);
+        drawSpring2D(Offset(p.dx, p.dy + sgn * 7.0), anchorY, 'kᵧ');
+      }
+      if (sup.hasSpringX) {
+        final sgn = isRight ? 1.0 : -1.0;
+        final anchorX = Offset(p0.dx + sgn * 44.0, p.dy);
+        drawSpring2D(Offset(p.dx + sgn * 7.0, p.dy), anchorX, 'kₓ');
       }
 
       // Vẽ mũi tên tải trọng ngoài P

@@ -55,6 +55,52 @@ enum TrussPreset {
   const TrussPreset(this.label, this.code);
 }
 
+/// Các loại liên kết gối tựa tại từng nút của hệ dàn phẳng 2D/3D
+enum NodeSupportType {
+  free('Tự do (Không liên kết)', 'Tự do', 'FREE'),
+  pin('Gối cố định — Khớp bản lề (Khóa X, Y)', 'Gối cố định', 'PIN'),
+  rollerX('Gối di động ngang — Con lăn X (Khóa Y)', 'Con lăn X', 'ROLLER_X'),
+  rollerY('Gối di động đứng — Con lăn Y (Khóa X)', 'Con lăn Y', 'ROLLER_Y'),
+  springY('Gối đàn hồi đứng — Lò xo kᵧ', 'Lò xo kᵧ', 'SPRING_Y'),
+  springX('Gối đàn hồi ngang — Lò xo kₓ', 'Lò xo kₓ', 'SPRING_X'),
+  springXY('Gối đàn hồi 2 phương — Lò xo kₓ, kᵧ', 'Lò xo XY', 'SPRING_XY'),
+  rollerXSpringX('Gối trượt ngang + Lò xo kháng X (Khóa Y, kₓ)', 'Con lăn X + kₓ', 'ROLLER_X_SPRING_X');
+
+  final String label;
+  final String shortLabel;
+  final String code;
+  const NodeSupportType(this.label, this.shortLabel, this.code);
+
+  bool get locksX => this == pin || this == rollerY;
+  bool get locksY => this == pin || this == rollerX || this == rollerXSpringX;
+  bool get hasSpringX => this == springX || this == springXY || this == rollerXSpringX;
+  bool get hasSpringY => this == springY || this == springXY;
+  bool get hasSpring => hasSpringX || hasSpringY;
+  int get restraintCount => (locksX || hasSpringX ? 1 : 0) + (locksY || hasSpringY ? 1 : 0);
+}
+
+/// Chế độ hiển thị liên kết nút: Sơ đồ tính cơ học ↔ Chi tiết gia công chế tạo
+enum ConnectionDisplayMode {
+  schematic('Sơ đồ tính', 'SCHEMATIC'),
+  fabrication('Chi tiết chế tạo', 'FABRICATION');
+
+  final String label;
+  final String code;
+  const ConnectionDisplayMode(this.label, this.code);
+}
+
+/// Kiểu cấu tạo liên kết gia công chế tạo đầu thanh dàn tại nút thép
+enum ConnectionDetailType {
+  boltedGusset('Bản mã + Bu-lông M20-8.8', 'Bu-lông M20', 'BOLTED_GUSSET'),
+  weldedGusset('Bản mã + Đường hàn góc hf=8', 'Hàn góc hf=8', 'WELDED_GUSSET'),
+  pinnedClevis('Tai chốt bản lề cơ khí Ø60', 'Chốt Ø60', 'PINNED_CLEVIS');
+
+  final String label;
+  final String shortLabel;
+  final String code;
+  const ConnectionDetailType(this.label, this.shortLabel, this.code);
+}
+
 /// Trường kết quả hiển thị bản đồ màu kiểu ANSYS
 enum ContourField {
   axialStress('Ứng suất pháp σ (MPa)', 'MPa', 'σ'),
@@ -178,7 +224,9 @@ class TrussModelData {
   final double E;                  // MPa
   final double nu;                 // Hệ số Poisson
   final double fyRef;              // MPa (tham khảo)
-  final List<int> fixedDofs0;      // Chỉ số DOF bị khóa (0-based)
+  final List<int> fixedDofs0;      // Chỉ số DOF bị khóa cứng (0-based)
+  final List<NodeSupportType> nodeSupports; // Loại liên kết tại từng nút
+  final double springStiffnessKnMm;         // Độ cứng lò xo đàn hồi k (kN/mm)
   final List<double> fRef;         // Véc-tơ tải trọng tham chiếu (N)
   final List<String> memberLabels;
   final List<String> nodeLabels;
@@ -197,6 +245,8 @@ class TrussModelData {
     required this.nu,
     required this.fyRef,
     required this.fixedDofs0,
+    required this.nodeSupports,
+    this.springStiffnessKnMm = 500.0,
     required this.fRef,
     required this.memberLabels,
     required this.nodeLabels,
@@ -210,11 +260,71 @@ class TrussModelData {
   int get nElems => conn.length;
   int get nDofs => 2 * nNodes;
 
+  /// Véc-tơ độ cứng lò xo đàn hồi tại từng bậc tự do (N/mm)
+  List<double> get springKPerDofNmm {
+    final kNmm = springStiffnessKnMm * 1000.0;
+    final out = List<double>.filled(nDofs, 0.0);
+    for (int i = 0; i < nNodes && i < nodeSupports.length; i++) {
+      if (nodeSupports[i].hasSpringX && !nodeSupports[i].locksX) {
+        out[2 * i] = kNmm;
+      }
+      if (nodeSupports[i].hasSpringY && !nodeSupports[i].locksY) {
+        out[2 * i + 1] = kNmm;
+      }
+    }
+    return out;
+  }
+
+  bool get hasAnySpring => nodeSupports.any((s) => s.hasSpring);
+
+  int get totalRestraintsCount =>
+      nodeSupports.fold<int>(0, (sum, s) => sum + s.restraintCount);
+
   List<int> get freeDofs0 {
     final fixed = fixedDofs0.toSet();
     return [
       for (int i = 0; i < nDofs; i++)
         if (!fixed.contains(i)) i,
+    ];
+  }
+
+  /// Danh sách loại liên kết mặc định cho từng bài toán mẫu
+  static List<NodeSupportType> defaultSupportsFor(TrussPreset preset) {
+    switch (preset) {
+      case TrussPreset.dahlblomEx91:
+        return const [NodeSupportType.pin, NodeSupportType.pin, NodeSupportType.free];
+      case TrussPreset.calfemExs3:
+        return const [
+          NodeSupportType.pin,
+          NodeSupportType.pin,
+          NodeSupportType.free,
+          NodeSupportType.pin,
+        ];
+      case TrussPreset.vonMisesArch:
+        return const [NodeSupportType.pin, NodeSupportType.free, NodeSupportType.pin];
+      case TrussPreset.assignment5Bar:
+        return const [
+          NodeSupportType.pin,
+          NodeSupportType.free,
+          NodeSupportType.free,
+          NodeSupportType.rollerX,
+        ];
+    }
+  }
+
+  static List<int> fixedDofsFromSupports(List<NodeSupportType> supports) {
+    final out = <int>[];
+    for (int i = 0; i < supports.length; i++) {
+      if (supports[i].locksX) out.add(2 * i);
+      if (supports[i].locksY) out.add(2 * i + 1);
+    }
+    return out;
+  }
+
+  static List<String> _buildNodeLabels(List<String> baseNames, List<NodeSupportType> supports) {
+    return [
+      for (int i = 0; i < baseNames.length; i++)
+        i < supports.length ? '${baseNames[i]} (${supports[i].shortLabel})' : baseNames[i],
     ];
   }
 
@@ -240,7 +350,15 @@ class TrussModelData {
     double pKn = 208.0,
     double nu = 0.30,
     SectionShape sectionShape = SectionShape.iSection,
+    List<NodeSupportType>? customSupports,
+    double springStiffnessKnMm = 500.0,
   }) {
+    final defSup = defaultSupportsFor(preset);
+    final supports = (customSupports != null && customSupports.length == defSup.length)
+        ? List<NodeSupportType>.from(customSupports)
+        : List<NodeSupportType>.from(defSup);
+    final fixed = fixedDofsFromSupports(supports);
+
     switch (preset) {
       case TrussPreset.dahlblomEx91:
         return TrussModelData(
@@ -259,10 +377,12 @@ class TrussModelData {
           E: 200000.0,
           nu: nu,
           fyRef: 355.0,
-          fixedDofs0: const [0, 1, 2, 3],
+          fixedDofs0: fixed,
+          nodeSupports: supports,
+          springStiffnessKnMm: springStiffnessKnMm,
           fRef: const [0.0, 0.0, 0.0, 0.0, -10.0e6, -0.2e6],
           memberLabels: const ['1-3 (AB)', '2-3 (CB)'],
-          nodeLabels: const ['Nút 1 (A)', 'Nút 2 (C)', 'Nút 3 (B)'],
+          nodeLabels: _buildNodeLabels(const ['Nút 1 (A)', 'Nút 2 (C)', 'Nút 3 (B)'], supports),
           sectionShape: sectionShape,
           baseL: 1600.0,
           baseA: 2000.0,
@@ -287,10 +407,12 @@ class TrussModelData {
           E: 200000.0,
           nu: nu,
           fyRef: 250.0,
-          fixedDofs0: const [0, 1, 2, 3, 6, 7],
+          fixedDofs0: fixed,
+          nodeSupports: supports,
+          springStiffnessKnMm: springStiffnessKnMm,
           fRef: const [0.0, 0.0, 0.0, 0.0, 0.0, -80000.0, 0.0, 0.0],
           memberLabels: const ['1-3', '3-4', '2-3'],
-          nodeLabels: const ['Nút 1', 'Nút 2', 'Nút 3 (Tải P)', 'Nút 4'],
+          nodeLabels: _buildNodeLabels(const ['Nút 1', 'Nút 2', 'Nút 3', 'Nút 4'], supports),
           sectionShape: sectionShape,
           baseL: 1600.0,
           baseA: 600.0,
@@ -313,10 +435,12 @@ class TrussModelData {
           E: eMpa,
           nu: nu,
           fyRef: 250.0,
-          fixedDofs0: const [0, 1, 4, 5],
+          fixedDofs0: fixed,
+          nodeSupports: supports,
+          springStiffnessKnMm: springStiffnessKnMm,
           fRef: [0.0, 0.0, 0.0, -pKn * 1000.0, 0.0, 0.0],
           memberLabels: const ['1-2', '2-3'],
-          nodeLabels: const ['Nút 1 (Gối trái)', 'Nút 2 (Đỉnh vòm)', 'Nút 3 (Gối phải)'],
+          nodeLabels: _buildNodeLabels(const ['Nút 1', 'Nút 2', 'Nút 3'], supports),
           sectionShape: sectionShape,
           baseL: lMm,
           baseA: aMm2,
@@ -346,15 +470,12 @@ class TrussModelData {
           E: eMpa,
           nu: nu,
           fyRef: 250.0,
-          fixedDofs0: const [0, 1, 7],
+          fixedDofs0: fixed,
+          nodeSupports: supports,
+          springStiffnessKnMm: springStiffnessKnMm,
           fRef: [0.0, 0.0, 0.0, pKn * 1000.0, 0.0, 0.0, 0.0, 0.0],
           memberLabels: const ['1-2', '1-3', '3-4', '3-2', '2-4'],
-          nodeLabels: const [
-            'Nút 1 (Khớp cố định)',
-            'Nút 2 (Tải P)',
-            'Nút 3 (Tự do)',
-            'Nút 4 (Con lăn trên)',
-          ],
+          nodeLabels: _buildNodeLabels(const ['Nút 1', 'Nút 2', 'Nút 3', 'Nút 4'], supports),
           sectionShape: sectionShape,
           baseL: lMm,
           baseA: aMm2,
@@ -404,6 +525,7 @@ class TrussAnalysisResult {
   final int totalIterations;
   final int totalFactorizations;
   final List<LoadStepRecord> history;
+  final String? warningMessage;
 
   const TrussAnalysisResult({
     required this.methodName,
@@ -425,6 +547,7 @@ class TrussAnalysisResult {
     required this.totalIterations,
     required this.totalFactorizations,
     required this.history,
+    this.warningMessage,
   });
 }
 
@@ -753,7 +876,106 @@ class CalfemNonlinearEngine {
         }
       }
     }
+    // Bổ sung đóng góp của các liên kết gối đàn hồi lò xo k_x, k_y (N/mm)
+    final kSpr = model.springKPerDofNmm;
+    for (int d = 0; d < nd; d++) {
+      if (kSpr[d] > 0.0) {
+        fInt[d] += kSpr[d] * u[d];
+        kt[d][d] += kSpr[d];
+      }
+    }
     return _AssembledState(fInt, kt, nForces, strains, lengths, energies);
+  }
+
+  /// Kiểm tra tính bất biến hình (ma trận độ cứng ban đầu K0_ff không suy biến)
+  static String? checkKinematicStability(TrussModelData model) {
+    final free = model.freeDofs0;
+    if (free.isEmpty) return null; // Tất cả các nút đã được khóa cứng
+    final nd = model.nDofs;
+    final K = _zeros(nd);
+    for (int e = 0; e < model.nElems; e++) {
+      final ni = model.conn[e][0] - 1;
+      final nj = model.conn[e][1] - 1;
+      final ke = bar2e(model.coords[ni][0], model.coords[ni][1],
+          model.coords[nj][0], model.coords[nj][1], model.E, model.areas[e]);
+      final dofs = model.elemDofs0(e);
+      for (int a = 0; a < 4; a++) {
+        for (int b = 0; b < 4; b++) {
+          K[dofs[a]][dofs[b]] += ke[a][b];
+        }
+      }
+    }
+    final kSpr = model.springKPerDofNmm;
+    for (int d = 0; d < nd; d++) {
+      K[d][d] += kSpr[d];
+    }
+    final kff = _subMatrix(K, free);
+    final n = free.length;
+    double maxDiag = 0.0;
+    for (int i = 0; i < n; i++) {
+      maxDiag = math.max(maxDiag, kff[i][i].abs());
+    }
+    if (maxDiag < 1e-12) {
+      return 'Hệ kết cấu BIẾN HÌNH (độ cứng bằng 0). Vui lòng bổ sung thêm liên kết gối tựa!';
+    }
+    // Khử Gauss kiểm tra suy biến
+    final a = [for (int i = 0; i < n; i++) List<double>.from(kff[i])];
+    for (int col = 0; col < n; col++) {
+      int pivotRow = col;
+      double maxVal = a[col][col].abs();
+      for (int row = col + 1; row < n; row++) {
+        final v = a[row][col].abs();
+        if (v > maxVal) {
+          maxVal = v;
+          pivotRow = row;
+        }
+      }
+      if (maxVal < 1e-7 * maxDiag) {
+        return 'Hệ kết cấu BIẾN HÌNH (ma trận độ cứng suy biến — thiếu liên kết gối tựa hoặc các phản lực đồng quy/song song)! Hãy bổ sung tối thiểu 3 bậc liên kết độc lập.';
+      }
+      if (pivotRow != col) {
+        final tmp = a[col];
+        a[col] = a[pivotRow];
+        a[pivotRow] = tmp;
+      }
+      final piv = a[col][col];
+      for (int row = col + 1; row < n; row++) {
+        final f = a[row][col] / piv;
+        if (f == 0.0) continue;
+        for (int k = col; k < n; k++) {
+          a[row][k] -= f * a[col][k];
+        }
+      }
+    }
+    return null;
+  }
+
+  static TrussAnalysisResult _unstableResult(
+      TrussModelData model, String methodName, double loadFactor, String warning) {
+    final nd = model.nDofs;
+    final ne = model.nElems;
+    return TrussAnalysisResult(
+      methodName: methodName,
+      engineSource: 'Python CALFEM Engine (Offline 100%)',
+      converged: false,
+      uMm: List<double>.filled(nd, 0.0),
+      reactionsN: List<double>.filled(nd, 0.0),
+      nForcesN: List<double>.filled(ne, 0.0),
+      stressMpa: List<double>.filled(ne, 0.0),
+      strain: List<double>.filled(ne, 0.0),
+      elongationMm: List<double>.filled(ne, 0.0),
+      currentLengthsMm: [for (int e = 0; e < ne; e++) model.initialLength(e)],
+      memberEnergyNmm: List<double>.filled(ne, 0.0),
+      totalEnergyNmm: 0.0,
+      sumFxN: 0.0,
+      sumFyN: 0.0,
+      sumMNmm: 0.0,
+      maxFreeResidualN: 0.0,
+      totalIterations: 0,
+      totalFactorizations: 0,
+      history: const [],
+      warningMessage: warning,
+    );
   }
 
   static TrussAnalysisResult _buildResult({
@@ -771,25 +993,44 @@ class CalfemNonlinearEngine {
     required int totalIterations,
     required int totalFactorizations,
     required List<LoadStepRecord> history,
+    String? warningMessage,
   }) {
     final ne = model.nElems;
+    final nd = model.nDofs;
     final stress = [for (int e = 0; e < ne; e++) nForces[e] / model.areas[e]];
     final elong = [for (int e = 0; e < ne; e++) lengths[e] - model.initialLength(e)];
-    final totalU = energies.fold(0.0, (a, b) => a + b);
+    final kSpr = model.springKPerDofNmm;
+    double springEnergy = 0.0;
+    for (int d = 0; d < nd; d++) {
+      if (kSpr[d] > 0.0) {
+        springEnergy += 0.5 * kSpr[d] * u[d] * u[d];
+      }
+    }
+    final totalU = energies.fold(0.0, (a, b) => a + b) + springEnergy;
+
+    // Sai số lực dư thực tại các bậc tự do không khóa cứng
+    double maxFreeRes = 0.0;
+    for (final d in model.freeDofs0) {
+      maxFreeRes = math.max(maxFreeRes, reactions[d].abs());
+    }
+
+    // Phản lực hiển thị & kiểm tra cân bằng: cộng thêm phản lực đàn hồi lò xo R_spring = -k*u
+    final totalReactions = List<double>.from(reactions);
+    for (int d = 0; d < nd; d++) {
+      if (kSpr[d] > 0.0) {
+        totalReactions[d] -= kSpr[d] * u[d];
+      }
+    }
 
     double sfx = 0.0, sfy = 0.0, sm = 0.0;
     for (int i = 0; i < model.nNodes; i++) {
-      final fx = loadFactor * model.fRef[2 * i] + reactions[2 * i];
-      final fy = loadFactor * model.fRef[2 * i + 1] + reactions[2 * i + 1];
+      final fx = loadFactor * model.fRef[2 * i] + totalReactions[2 * i];
+      final fy = loadFactor * model.fRef[2 * i + 1] + totalReactions[2 * i + 1];
       final x = model.coords[i][0] + (useDeformedCoords ? u[2 * i] : 0.0);
       final y = model.coords[i][1] + (useDeformedCoords ? u[2 * i + 1] : 0.0);
       sfx += fx;
       sfy += fy;
       sm += x * fy - y * fx;
-    }
-    double maxFreeRes = 0.0;
-    for (final d in model.freeDofs0) {
-      maxFreeRes = math.max(maxFreeRes, reactions[d].abs());
     }
 
     return TrussAnalysisResult(
@@ -797,7 +1038,7 @@ class CalfemNonlinearEngine {
       engineSource: 'Python CALFEM Engine (Offline 100%)',
       converged: converged,
       uMm: u,
-      reactionsN: reactions,
+      reactionsN: totalReactions,
       nForcesN: nForces,
       stressMpa: stress,
       strain: strains,
@@ -812,6 +1053,7 @@ class CalfemNonlinearEngine {
       totalIterations: totalIterations,
       totalFactorizations: totalFactorizations,
       history: history,
+      warningMessage: warningMessage,
     );
   }
 
@@ -842,6 +1084,10 @@ class CalfemNonlinearEngine {
 
   /// 1. Đàn hồi tuyến tính bậc 1 (CALFEM bar2e)
   static TrussAnalysisResult solveLinear(TrussModelData model, {double loadFactor = 1.0}) {
+    final stabWarn = checkKinematicStability(model);
+    if (stabWarn != null) {
+      return _unstableResult(model, SolverMethod.linearFirstOrder.label, loadFactor, stabWarn);
+    }
     final nd = model.nDofs;
     final free = model.freeDofs0;
     final K = _zeros(nd);
@@ -857,11 +1103,17 @@ class CalfemNonlinearEngine {
         }
       }
     }
+    final kSpr = model.springKPerDofNmm;
+    for (int d = 0; d < nd; d++) {
+      K[d][d] += kSpr[d];
+    }
     final f = [for (final v in model.fRef) v * loadFactor];
-    final uf = solveLinearSystem(_subMatrix(K, free), _subVec(f, free));
     final u = List<double>.filled(nd, 0.0);
-    for (int i = 0; i < free.length; i++) {
-      u[free[i]] = uf[i];
+    if (free.isNotEmpty) {
+      final uf = solveLinearSystem(_subMatrix(K, free), _subVec(f, free));
+      for (int i = 0; i < free.length; i++) {
+        u[free[i]] = uf[i];
+      }
     }
     final ku = _matVec(K, u);
     final r = [for (int i = 0; i < nd; i++) ku[i] - f[i]];
@@ -910,13 +1162,18 @@ class CalfemNonlinearEngine {
     double tolRel = 1e-10,
     int maxIter = 50,
   }) {
+    final stabWarn = checkKinematicStability(model);
+    if (stabWarn != null) {
+      return _unstableResult(model, SolverMethod.bar2gSecondOrder.label, loadFactor, stabWarn);
+    }
     final nd = model.nDofs;
     final free = model.freeDofs0;
+    final kSpr = model.springKPerDofNmm;
     final f = [for (final v in model.fRef) v * loadFactor];
     var nCur = List<double>.filled(model.nElems, 0.0);
     var u = List<double>.filled(nd, 0.0);
     var K = _zeros(nd);
-    bool converged = false;
+    bool converged = free.isEmpty;
     final history = <LoadStepRecord>[];
 
     for (int it = 1; it <= maxIter; it++) {
@@ -933,10 +1190,15 @@ class CalfemNonlinearEngine {
           }
         }
       }
-      final uf = solveLinearSystem(_subMatrix(K, free), _subVec(f, free));
+      for (int d = 0; d < nd; d++) {
+        K[d][d] += kSpr[d];
+      }
       u = List<double>.filled(nd, 0.0);
-      for (int i = 0; i < free.length; i++) {
-        u[free[i]] = uf[i];
+      if (free.isNotEmpty) {
+        final uf = solveLinearSystem(_subMatrix(K, free), _subVec(f, free));
+        for (int i = 0; i < free.length; i++) {
+          u[free[i]] = uf[i];
+        }
       }
       final nNext = List<double>.filled(model.nElems, 0.0);
       double diff2 = 0.0, norm2 = 0.0;
@@ -999,9 +1261,34 @@ class CalfemNonlinearEngine {
     double tolForce = 1e-7,
     int maxIter = 40,
   }) {
+    final mLabel = isTotalLagrangian ? SolverMethod.totalLagrangian.label : SolverMethod.corotationalNR.label;
+    final stabWarn = checkKinematicStability(model);
+    if (stabWarn != null) {
+      return _unstableResult(model, mLabel, loadFactor, stabWarn);
+    }
     final nd = model.nDofs;
     final free = model.freeDofs0;
     final u = List<double>.filled(nd, 0.0);
+    if (free.isEmpty) {
+      final st0 = _assembleNonlinear(model, u, isTotalLagrangian);
+      final r0 = [for (int i = 0; i < nd; i++) st0.fInt[i] - loadFactor * model.fRef[i]];
+      return _buildResult(
+        model: model,
+        methodName: mLabel,
+        converged: true,
+        u: u,
+        reactions: r0,
+        nForces: st0.nForces,
+        strains: st0.strains,
+        lengths: st0.lengths,
+        energies: st0.energies,
+        loadFactor: loadFactor,
+        useDeformedCoords: true,
+        totalIterations: 0,
+        totalFactorizations: 0,
+        history: const [],
+      );
+    }
     final history = <LoadStepRecord>[
       LoadStepRecord(
         step: 0,
@@ -1085,9 +1372,16 @@ class CalfemNonlinearEngine {
     double tolForce = 1e-7,
     int maxIter = 100,
   }) {
+    final stabWarn = checkKinematicStability(model);
+    if (stabWarn != null) {
+      return _unstableResult(model, SolverMethod.modifiedNR.label, loadFactor, stabWarn);
+    }
     final nd = model.nDofs;
     final free = model.freeDofs0;
     final u = List<double>.filled(nd, 0.0);
+    if (free.isEmpty) {
+      return solveFullNR(model, isTotalLagrangian: false, loadFactor: loadFactor, nSteps: 1);
+    }
     final history = <LoadStepRecord>[
       LoadStepRecord(
           step: 0,
@@ -1162,9 +1456,16 @@ class CalfemNonlinearEngine {
 
   /// 6. Euler bước đơn (không hiệu chỉnh lực dư)
   static TrussAnalysisResult solveEuler(TrussModelData model, {double loadFactor = 1.0, int nSteps = 10}) {
+    final stabWarn = checkKinematicStability(model);
+    if (stabWarn != null) {
+      return _unstableResult(model, SolverMethod.eulerSingleStep.label, loadFactor, stabWarn);
+    }
     final nd = model.nDofs;
     final free = model.freeDofs0;
     final u = List<double>.filled(nd, 0.0);
+    if (free.isEmpty) {
+      return solveFullNR(model, isTotalLagrangian: false, loadFactor: loadFactor, nSteps: 1);
+    }
     final dlam = loadFactor / nSteps;
     final history = <LoadStepRecord>[];
     var state = _assembleNonlinear(model, u, false);
@@ -1207,9 +1508,16 @@ class CalfemNonlinearEngine {
 
   /// 7. Runge-Kutta bậc 2 điểm giữa (Midpoint RK2)
   static TrussAnalysisResult solveRK2(TrussModelData model, {double loadFactor = 1.0, int nSteps = 10}) {
+    final stabWarn = checkKinematicStability(model);
+    if (stabWarn != null) {
+      return _unstableResult(model, SolverMethod.rk2Midpoint.label, loadFactor, stabWarn);
+    }
     final nd = model.nDofs;
     final free = model.freeDofs0;
     final u = List<double>.filled(nd, 0.0);
+    if (free.isEmpty) {
+      return solveFullNR(model, isTotalLagrangian: false, loadFactor: loadFactor, nSteps: 1);
+    }
     final dlam = loadFactor / nSteps;
     final history = <LoadStepRecord>[];
     var state = _assembleNonlinear(model, u, false);
@@ -1259,7 +1567,9 @@ class CalfemNonlinearEngine {
 
   /// 8. Truy vết đường cong cân bằng chuyển vị lớn (Snap-Through bằng Displacement Control)
   static List<EquilibriumPoint> traceSnapThroughCurve(TrussModelData model) {
+    if (checkKinematicStability(model) != null) return const [];
     final free = model.freeDofs0;
+    if (free.isEmpty) return const [];
     int qGlobal = 0;
     double maxF = 0.0;
     for (int i = 0; i < model.fRef.length; i++) {

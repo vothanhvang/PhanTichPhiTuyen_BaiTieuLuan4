@@ -25,7 +25,7 @@ Chức năng:
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 import math
 import numpy as np
 
@@ -133,7 +133,14 @@ class TrussModel:
     section_shape: str = "I_SECTION" # Hình dạng mặt cắt 3D để phẫu thuật
     fy_reference_mpa: float = 250.0  # Giới hạn chảy tham khảo (chỉ để đánh giá kỹ thuật)
     units: str = "N-mm-MPa"
+    spring_k: Optional[np.ndarray] = None  # (2*n_nodes,) độ cứng lò xo đàn hồi k (N/mm)
     meta: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def spring_k_vec(self) -> np.ndarray:
+        if self.spring_k is None:
+            return np.zeros(self.n_dofs, dtype=float)
+        return np.asarray(self.spring_k, dtype=float).reshape(self.n_dofs)
 
     @property
     def n_nodes(self) -> int:
@@ -162,12 +169,15 @@ class TrussModel:
 
     @property
     def constrained_dofs_0based(self) -> np.ndarray:
+        if self.bc is None or self.bc.size == 0:
+            return np.array([], dtype=int)
         return self.bc[:, 0].astype(int) - 1
 
     @property
     def free_dofs_0based(self) -> np.ndarray:
         mask = np.ones(self.n_dofs, dtype=bool)
-        mask[self.constrained_dofs_0based] = False
+        if self.constrained_dofs_0based.size > 0:
+            mask[self.constrained_dofs_0based] = False
         return np.where(mask)[0]
 
     def element_coords(self, e: int) -> Tuple[np.ndarray, np.ndarray]:

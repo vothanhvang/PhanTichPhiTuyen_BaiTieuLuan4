@@ -111,14 +111,17 @@ def _compute_equilibrium_check(
       - Trong phân tích PHI TUYẾN HÌNH HỌC: mô-men PHẢI viết trên tọa độ BIẾN DẠNG x = X + u!
     """
     coords_eval = model.coords + u.reshape(-1, 2) if use_deformed_coords else model.coords
-    # Tổng ngoại lực tác dụng lên các nút = tải ngoài f_ext + phản lực gối reactions
-    total_nodal = (f_ext + reactions).reshape(-1, 2)
+    k_spr = model.spring_k_vec
+    free_idx = model.free_dofs_0based
+    free_res = float(np.max(np.abs(reactions[free_idx]))) if free_idx.size > 0 else 0.0
+    # Tổng ngoại lực tác dụng lên các nút = tải ngoài f_ext + phản lực gối cứng + phản lực lò xo (-k*u)
+    total_reactions = reactions - k_spr * u
+    total_nodal = (f_ext + total_reactions).reshape(-1, 2)
     sum_fx = float(np.sum(total_nodal[:, 0]))
     sum_fy = float(np.sum(total_nodal[:, 1]))
     sum_m = float(
         np.sum(coords_eval[:, 0] * total_nodal[:, 1] - coords_eval[:, 1] * total_nodal[:, 0])
     )
-    free_res = float(np.max(np.abs(reactions[model.free_dofs_0based])))
     return {
         "sum_Fx_N": sum_fx,
         "sum_Fy_N": sum_fy,
@@ -170,6 +173,13 @@ def assemble_nonlinear_state(
         lengths[e] = l_e
         energies[e] = en_e
 
+    # Cộng độ cứng & lực đàn hồi của các gối lò xo (nếu có)
+    k_spr = model.spring_k_vec
+    if np.any(k_spr > 0.0):
+        f_int += k_spr * u
+        Kt += np.diag(k_spr)
+        Ke_glob += np.diag(k_spr)
+
     return f_int, Kt, Ke_glob, Kg_glob, N, strains, lengths, energies
 
 
@@ -190,6 +200,10 @@ def solve_linear_calfem(model: TrussModel, load_factor: float = 1.0) -> Analysis
         ex, ey = model.element_coords(e)
         Ke = bar2e(ex, ey, (model.E, model.areas[e]))
         K = assem(model.edof[e], K, Ke)
+
+    k_spr = model.spring_k_vec
+    if np.any(k_spr > 0.0):
+        K += np.diag(k_spr)
 
     u, reactions = solveq(K, f, model.bc)
     ed = extract(model.edof, u)
@@ -213,7 +227,7 @@ def solve_linear_calfem(model: TrussModel, load_factor: float = 1.0) -> Analysis
         formulation="linear_first_order",
         converged=True,
         u=u,
-        reactions=reactions,
+        reactions=reactions - model.spring_k_vec * u,
         N=N,
         stress=stress,
         strain=strain,
@@ -282,6 +296,11 @@ def solve_calfem_bar2g_second_order(
             Ke_tot = assem(model.edof[e], Ke_tot, Ke0)
             Kg_tot = assem(model.edof[e], Kg_tot, Kg0)
 
+        k_spr = model.spring_k_vec
+        if np.any(k_spr > 0.0):
+            K_tot += np.diag(k_spr)
+            Ke_tot += np.diag(k_spr)
+
         u, reactions = solveq(K_tot, f, model.bc)
         ed = extract(model.edof, u)
         N_next = np.zeros(ne, dtype=float)
@@ -328,7 +347,7 @@ def solve_calfem_bar2g_second_order(
         formulation="calfem_bar2g_second_order",
         converged=converged,
         u=u,
-        reactions=reactions,
+        reactions=reactions - model.spring_k_vec * u,
         N=N_cur,
         stress=stress,
         strain=strain,
@@ -460,7 +479,7 @@ def _solve_full_nr_core(
         formulation=formulation,
         converged=all_converged,
         u=u,
-        reactions=reactions,
+        reactions=reactions - model.spring_k_vec * u,
         N=N,
         stress=stress,
         strain=strains,
@@ -618,7 +637,7 @@ def solve_corotational_modified_nr(
         formulation="corotational",
         converged=all_converged,
         u=u,
-        reactions=reactions,
+        reactions=reactions - model.spring_k_vec * u,
         N=N,
         stress=N / model.areas,
         strain=strains,
@@ -687,7 +706,7 @@ def solve_corotational_euler(
         formulation="corotational",
         converged=True,
         u=u,
-        reactions=reactions,
+        reactions=reactions - model.spring_k_vec * u,
         N=N,
         stress=N / model.areas,
         strain=strains,
@@ -756,7 +775,7 @@ def solve_corotational_rk2(
         formulation="corotational",
         converged=True,
         u=u,
-        reactions=reactions,
+        reactions=reactions - model.spring_k_vec * u,
         N=N,
         stress=N / model.areas,
         strain=strains,
