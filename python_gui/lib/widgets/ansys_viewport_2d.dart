@@ -704,26 +704,43 @@ class _Ansys2DPainter extends CustomPainter {
       }
       // Bệ bản đế + bu-lông neo + khối móng bê tông cho chế độ chi tiết chế tạo 2D
       if (sup == NodeSupportType.pin) {
-        final bp = Rect.fromCenter(center: Offset(p.dx, p.dy + 22), width: 42, height: 6);
-        final mc = Rect.fromCenter(center: Offset(p.dx, p.dy + 34), width: 56, height: 18);
+        final sgn = isTop ? -1.0 : 1.0;
+        final bp = Rect.fromCenter(center: Offset(p.dx, p.dy + sgn * 22), width: 42, height: 6);
+        final mc = Rect.fromCenter(center: Offset(p.dx, p.dy + sgn * 34), width: 56, height: 18);
         canvas.drawRect(mc, concFill);
         canvas.drawRect(mc, edgeStroke);
         canvas.drawRect(bp, plateFill);
         canvas.drawRect(bp, edgeStroke);
         for (final ax in [-14.0, 14.0]) {
-          canvas.drawLine(Offset(p.dx + ax, p.dy + 16), Offset(p.dx + ax, p.dy + 36),
+          canvas.drawLine(Offset(p.dx + ax, p.dy + sgn * 16), Offset(p.dx + ax, p.dy + sgn * 36),
               Paint()..color = const Color(0xFFFACC15)..strokeWidth = 2.0);
         }
       } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX) {
         final sgn = isTop ? -1.0 : 1.0;
-        final mc = Rect.fromCenter(center: Offset(p.dx, p.dy + sgn * 36), width: 50, height: 12);
+        final p1 = Rect.fromCenter(center: Offset(p.dx, p.dy + sgn * 18), width: 36, height: 5);
+        final p2 = Rect.fromCenter(center: Offset(p.dx, p.dy + sgn * 30), width: 42, height: 5);
+        final mc = Rect.fromCenter(center: Offset(p.dx, p.dy + sgn * 39), width: 52, height: 12);
         canvas.drawRect(mc, concFill);
         canvas.drawRect(mc, edgeStroke);
+        canvas.drawRect(p1, plateFill);
+        canvas.drawRect(p1, edgeStroke);
+        canvas.drawRect(p2, plateFill);
+        canvas.drawRect(p2, edgeStroke);
+        canvas.drawCircle(Offset(p.dx - 8, p.dy + sgn * 24), 3.6, Paint()..color = const Color(0xFF38BDF8));
+        canvas.drawCircle(Offset(p.dx + 8, p.dy + sgn * 24), 3.6, Paint()..color = const Color(0xFF38BDF8));
       } else if (sup == NodeSupportType.rollerY) {
         final sgn = isRight ? 1.0 : -1.0;
-        final mc = Rect.fromCenter(center: Offset(p.dx + sgn * 36, p.dy), width: 12, height: 50);
+        final p1 = Rect.fromCenter(center: Offset(p.dx + sgn * 18, p.dy), width: 5, height: 36);
+        final p2 = Rect.fromCenter(center: Offset(p.dx + sgn * 30, p.dy), width: 5, height: 42);
+        final mc = Rect.fromCenter(center: Offset(p.dx + sgn * 39, p.dy), width: 12, height: 52);
         canvas.drawRect(mc, concFill);
         canvas.drawRect(mc, edgeStroke);
+        canvas.drawRect(p1, plateFill);
+        canvas.drawRect(p1, edgeStroke);
+        canvas.drawRect(p2, plateFill);
+        canvas.drawRect(p2, edgeStroke);
+        canvas.drawCircle(Offset(p.dx + sgn * 24, p.dy - 8), 3.6, Paint()..color = const Color(0xFF38BDF8));
+        canvas.drawCircle(Offset(p.dx + sgn * 24, p.dy + 8), 3.6, Paint()..color = const Color(0xFF38BDF8));
       }
     }
   }
@@ -802,47 +819,55 @@ class _Ansys2DPainter extends CustomPainter {
       final isTop = model.coords[i][1] > midY + 1e-3;
       final isRight = model.coords[i][0] > midX + 1e-3;
 
-      if (sup == NodeSupportType.pin) {
-        final tri = Path()
-          ..moveTo(p.dx, p.dy + 7)
-          ..lineTo(p.dx - 13, p.dy + 24)
-          ..lineTo(p.dx + 13, p.dy + 24)
-          ..close();
-        canvas.drawPath(tri, Paint()..color = const Color(0xFF334155));
-        canvas.drawPath(tri, supPaint);
-        drawGroundHatch(Offset(p.dx - 18, p.dy + 25), Offset(p.dx + 18, p.dy + 25), const Offset(0, 1));
-      } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX) {
-        final sgn = isTop ? -1.0 : 1.0;
-        final tri = Path()
-          ..moveTo(p.dx, p.dy + sgn * 7)
-          ..lineTo(p.dx - 12, p.dy + sgn * 22)
-          ..lineTo(p.dx + 12, p.dy + sgn * 22)
-          ..close();
-        canvas.drawPath(tri, Paint()..color = const Color(0xFF334155));
-        canvas.drawPath(tri, supPaint);
-        canvas.drawCircle(Offset(p.dx - 6, p.dy + sgn * 26), 3.5, supPaint);
-        canvas.drawCircle(Offset(p.dx + 6, p.dy + sgn * 26), 3.5, supPaint);
-        drawGroundHatch(
-          Offset(p.dx - 18, p.dy + sgn * 30),
-          Offset(p.dx + 18, p.dy + sgn * 30),
-          Offset(0, sgn),
-        );
-      } else if (sup == NodeSupportType.rollerY) {
-        final sgn = isRight ? 1.0 : -1.0;
-        final tri = Path()
-          ..moveTo(p.dx + sgn * 7, p.dy)
-          ..lineTo(p.dx + sgn * 22, p.dy - 12)
-          ..lineTo(p.dx + sgn * 22, p.dy + 12)
-          ..close();
-        canvas.drawPath(tri, Paint()..color = const Color(0xFF334155));
-        canvas.drawPath(tri, supPaint);
-        canvas.drawCircle(Offset(p.dx + sgn * 26, p.dy - 6), 3.5, supPaint);
-        canvas.drawCircle(Offset(p.dx + sgn * 26, p.dy + 6), 3.5, supPaint);
-        drawGroundHatch(
-          Offset(p.dx + sgn * 30, p.dy - 18),
-          Offset(p.dx + sgn * 30, p.dy + 18),
-          Offset(sgn, 0),
-        );
+      if (connectionMode == ConnectionDisplayMode.schematic) {
+        if (sup == NodeSupportType.pin) {
+          // Tự động hướng gối cố định ra phía ngoài kết cấu (nút biên trên → lên trên, nút biên dưới → xuống dưới)
+          final sgn = isTop ? -1.0 : 1.0;
+          final tri = Path()
+            ..moveTo(p.dx, p.dy + sgn * 7)
+            ..lineTo(p.dx - 13, p.dy + sgn * 24)
+            ..lineTo(p.dx + 13, p.dy + sgn * 24)
+            ..close();
+          canvas.drawPath(tri, Paint()..color = const Color(0xFF334155));
+          canvas.drawPath(tri, supPaint);
+          drawGroundHatch(
+            Offset(p.dx - 18, p.dy + sgn * 25),
+            Offset(p.dx + 18, p.dy + sgn * 25),
+            Offset(0, sgn),
+          );
+        } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX) {
+          final sgn = isTop ? -1.0 : 1.0;
+          final tri = Path()
+            ..moveTo(p.dx, p.dy + sgn * 7)
+            ..lineTo(p.dx - 12, p.dy + sgn * 22)
+            ..lineTo(p.dx + 12, p.dy + sgn * 22)
+            ..close();
+          canvas.drawPath(tri, Paint()..color = const Color(0xFF334155));
+          canvas.drawPath(tri, supPaint);
+          canvas.drawCircle(Offset(p.dx - 6, p.dy + sgn * 26), 3.5, supPaint);
+          canvas.drawCircle(Offset(p.dx + 6, p.dy + sgn * 26), 3.5, supPaint);
+          drawGroundHatch(
+            Offset(p.dx - 18, p.dy + sgn * 30),
+            Offset(p.dx + 18, p.dy + sgn * 30),
+            Offset(0, sgn),
+          );
+        } else if (sup == NodeSupportType.rollerY) {
+          final sgn = isRight ? 1.0 : -1.0;
+          final tri = Path()
+            ..moveTo(p.dx + sgn * 7, p.dy)
+            ..lineTo(p.dx + sgn * 22, p.dy - 12)
+            ..lineTo(p.dx + sgn * 22, p.dy + 12)
+            ..close();
+          canvas.drawPath(tri, Paint()..color = const Color(0xFF334155));
+          canvas.drawPath(tri, supPaint);
+          canvas.drawCircle(Offset(p.dx + sgn * 26, p.dy - 6), 3.5, supPaint);
+          canvas.drawCircle(Offset(p.dx + sgn * 26, p.dy + 6), 3.5, supPaint);
+          drawGroundHatch(
+            Offset(p.dx + sgn * 30, p.dy - 18),
+            Offset(p.dx + sgn * 30, p.dy + 18),
+            Offset(sgn, 0),
+          );
+        }
       }
 
       if (sup.hasSpringY) {

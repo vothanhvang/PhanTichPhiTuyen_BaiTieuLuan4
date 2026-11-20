@@ -872,10 +872,12 @@ class _FabricationNodePainter extends CustomPainter {
 
     if (sup == NodeSupportType.pin) {
       // Bản đế thép dày BP + 2 sườn tăng cứng + 4 bu-lông neo M24 + Lớp vữa + Khối móng bê tông
-      final bpTop = center.dy + 44.0;
-      final bpRect = Rect.fromCenter(center: Offset(center.dx, bpTop + 5), width: 122, height: 10);
-      final groutRect = Rect.fromCenter(center: Offset(center.dx, bpTop + 13), width: 128, height: 6);
-      final concRect = Rect.fromCenter(center: Offset(center.dx, bpTop + 34), width: 158, height: 36);
+      // Tự động hướng lên trên nếu nút ở biên trên (N3, N4), xuống dưới nếu nút ở biên dưới (N1, N2)
+      final sgn = isTop ? -1.0 : 1.0;
+      final bpFace = center.dy + sgn * 44.0;
+      final bpRect = Rect.fromCenter(center: Offset(center.dx, bpFace + sgn * 5), width: 122, height: 10);
+      final groutRect = Rect.fromCenter(center: Offset(center.dx, bpFace + sgn * 13), width: 128, height: 6);
+      final concRect = Rect.fromCenter(center: Offset(center.dx, bpFace + sgn * 34), width: 158, height: 36);
       canvas.drawRect(concRect, concretePaint);
       canvas.drawRect(concRect, edgePaint);
       canvas.drawRect(groutRect, Paint()..color = const Color(0xFF94A3B8));
@@ -884,22 +886,31 @@ class _FabricationNodePainter extends CustomPainter {
       // 2 sườn tăng cứng tam giác (Stiffener ribs)
       for (final sx in [-1.0, 1.0]) {
         final rib = Path()
-          ..moveTo(center.dx + sx * 18, bpTop)
-          ..lineTo(center.dx + sx * 50, bpTop)
-          ..lineTo(center.dx + sx * 18, center.dy + 12)
+          ..moveTo(center.dx + sx * 18, bpFace)
+          ..lineTo(center.dx + sx * 50, bpFace)
+          ..lineTo(center.dx + sx * 18, center.dy + sgn * 12)
           ..close();
         canvas.drawPath(rib, Paint()..color = const Color(0xFF475569));
         canvas.drawPath(rib, edgePaint);
         // Bu-lông neo móng M24 (Anchor bolts)
         final ax = center.dx + sx * 44;
         canvas.drawLine(
-          Offset(ax, bpTop - 6),
-          Offset(ax, bpTop + 36),
+          Offset(ax, bpFace - sgn * 6),
+          Offset(ax, bpFace + sgn * 36),
           Paint()..color = const Color(0xFFFBBF24)..strokeWidth = 2.6,
         );
-        canvas.drawRect(Rect.fromCenter(center: Offset(ax, bpTop - 3), width: 9, height: 5), Paint()..color = const Color(0xFFFBBF24));
+        canvas.drawRect(
+            Rect.fromCenter(center: Offset(ax, bpFace - sgn * 3), width: 9, height: 5),
+            Paint()..color = const Color(0xFFFBBF24));
       }
-      _drawText(canvas, Offset(center.dx - 52, bpTop + 26), 'MÓNG BT C${report.params.concreteFckMpa.toStringAsFixed(0)} • 4×M24', const Color(0xFFE2E8F0), 8.6, bold: true);
+      _drawText(
+        canvas,
+        Offset(center.dx - 52, bpFace + sgn * 34 - 5),
+        'MÓNG BT C${report.params.concreteFckMpa.toStringAsFixed(0)} • 4×M24',
+        const Color(0xFFE2E8F0),
+        8.6,
+        bold: true,
+      );
     } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX) {
       final sgn = isTop ? -1.0 : 1.0;
       final p1Y = center.dy + sgn * 44.0;
@@ -1012,6 +1023,48 @@ class _FabricationNodePainter extends CustomPainter {
         col,
       );
     }
+    // Ký hiệu gối tựa sơ đồ tính đúng hướng ra ngoài biên nút
+    final sup = report.supportType;
+    final supStroke = Paint()
+      ..color = const Color(0xFF94A3B8)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2;
+    if (sup == NodeSupportType.pin) {
+      final sgn = isTop ? -1.0 : 1.0;
+      final tri = Path()
+        ..moveTo(center.dx, center.dy + sgn * 9)
+        ..lineTo(center.dx - 18, center.dy + sgn * 34)
+        ..lineTo(center.dx + 18, center.dy + sgn * 34)
+        ..close();
+      canvas.drawPath(tri, Paint()..color = const Color(0xFF334155));
+      canvas.drawPath(tri, supStroke);
+      canvas.drawLine(Offset(center.dx - 24, center.dy + sgn * 35), Offset(center.dx + 24, center.dy + sgn * 35), supStroke);
+    } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX) {
+      final sgn = isTop ? -1.0 : 1.0;
+      final tri = Path()
+        ..moveTo(center.dx, center.dy + sgn * 9)
+        ..lineTo(center.dx - 17, center.dy + sgn * 31)
+        ..lineTo(center.dx + 17, center.dy + sgn * 31)
+        ..close();
+      canvas.drawPath(tri, Paint()..color = const Color(0xFF334155));
+      canvas.drawPath(tri, supStroke);
+      canvas.drawCircle(Offset(center.dx - 8, center.dy + sgn * 36), 4.5, supStroke);
+      canvas.drawCircle(Offset(center.dx + 8, center.dy + sgn * 36), 4.5, supStroke);
+      canvas.drawLine(Offset(center.dx - 24, center.dy + sgn * 41), Offset(center.dx + 24, center.dy + sgn * 41), supStroke);
+    } else if (sup == NodeSupportType.rollerY) {
+      final sgn = isRight ? 1.0 : -1.0;
+      final tri = Path()
+        ..moveTo(center.dx + sgn * 9, center.dy)
+        ..lineTo(center.dx + sgn * 31, center.dy - 17)
+        ..lineTo(center.dx + sgn * 31, center.dy + 17)
+        ..close();
+      canvas.drawPath(tri, Paint()..color = const Color(0xFF334155));
+      canvas.drawPath(tri, supStroke);
+      canvas.drawCircle(Offset(center.dx + sgn * 36, center.dy - 8), 4.5, supStroke);
+      canvas.drawCircle(Offset(center.dx + sgn * 36, center.dy + 8), 4.5, supStroke);
+      canvas.drawLine(Offset(center.dx + sgn * 41, center.dy - 24), Offset(center.dx + sgn * 41, center.dy + 24), supStroke);
+    }
+
     // Khớp tròn trung tâm
     canvas.drawCircle(center, 9.0, Paint()..color = darkMode ? const Color(0xFF0F172A) : Colors.white);
     canvas.drawCircle(center, 9.0, Paint()..color = const Color(0xFF38BDF8)..style = PaintingStyle.stroke..strokeWidth = 2.6);

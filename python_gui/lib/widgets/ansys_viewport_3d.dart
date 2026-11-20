@@ -1120,15 +1120,17 @@ class _Ansys3DPainter extends CustomPainter {
       const anchorCol = Color(0xFFFACC15);
 
       if (sup == NodeSupportType.pin) {
-        final bpY = p.y - 108.0;
+        // Tự động hướng bản đế & móng bê tông ra phía ngoài nút (biên trên → +Y, biên dưới → -Y)
+        final sgn = isTop ? 1.0 : -1.0;
+        final bpY = p.y + sgn * 108.0;
         // Bản đế thép dày BP + 2 sườn tăng cứng + 4 bu-lông neo M24 + Khối móng bê tông 3D
         _addBox3D(faces, _Vec3(p.x, bpY, 0), 270, 26, 180, steelCol);
-        _addBox3D(faces, _Vec3(p.x - 75, bpY + 42, 0), 16, 62, 130, const Color(0xFF475569));
-        _addBox3D(faces, _Vec3(p.x + 75, bpY + 42, 0), 16, 62, 130, const Color(0xFF475569));
-        _addBox3D(faces, _Vec3(p.x, bpY - 52, 0), 350, 78, 240, concreteCol);
+        _addBox3D(faces, _Vec3(p.x - 75, bpY - sgn * 42, 0), 16, 62, 130, const Color(0xFF475569));
+        _addBox3D(faces, _Vec3(p.x + 75, bpY - sgn * 42, 0), 16, 62, 130, const Color(0xFF475569));
+        _addBox3D(faces, _Vec3(p.x, bpY + sgn * 52, 0), 350, 78, 240, concreteCol);
         for (final ax in [-105.0, 105.0]) {
           for (final az in [-62.0, 62.0]) {
-            _addBox3D(faces, _Vec3(p.x + ax, bpY + 12, az), 18, 52, 18, anchorCol);
+            _addBox3D(faces, _Vec3(p.x + ax, bpY - sgn * 12, az), 18, 52, 18, anchorCol);
           }
         }
       } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX) {
@@ -1313,14 +1315,15 @@ class _Ansys3DPainter extends CustomPainter {
       final isRight = model.coords[i][0] > midX + 1e-3;
 
       if (sup == NodeSupportType.pin) {
-        final a = cam.project(p + _Vec3(0, -unit * 0.25, 0)).pt;
-        final b = cam.project(p + _Vec3(-unit * 0.65, -unit * 1.15, 0)).pt;
-        final c = cam.project(p + _Vec3(unit * 0.65, -unit * 1.15, 0)).pt;
+        final sgn = isTop ? 1.0 : -1.0;
+        final a = cam.project(p + _Vec3(0, sgn * unit * 0.25, 0)).pt;
+        final b = cam.project(p + _Vec3(-unit * 0.65, sgn * unit * 1.15, 0)).pt;
+        final c = cam.project(p + _Vec3(unit * 0.65, sgn * unit * 1.15, 0)).pt;
         final tri = Path()..moveTo(a.dx, a.dy)..lineTo(b.dx, b.dy)..lineTo(c.dx, c.dy)..close();
         canvas.drawPath(tri, supFill);
         canvas.drawPath(tri, supStroke);
-        final g1 = cam.project(p + _Vec3(-unit * 0.9, -unit * 1.2, 0)).pt;
-        final g2 = cam.project(p + _Vec3(unit * 0.9, -unit * 1.2, 0)).pt;
+        final g1 = cam.project(p + _Vec3(-unit * 0.9, sgn * unit * 1.2, 0)).pt;
+        final g2 = cam.project(p + _Vec3(unit * 0.9, sgn * unit * 1.2, 0)).pt;
         canvas.drawLine(g1, g2, supStroke);
       } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX) {
         final sgn = isTop ? 1.0 : -1.0;
