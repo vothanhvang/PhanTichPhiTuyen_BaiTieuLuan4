@@ -35,18 +35,18 @@ def _find_vcvars64() -> str:
 
 def main() -> None:
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    flutter_rel = os.path.join(root, "flutter_app", "build", "windows", "x64", "runner", "Release")
-    icon_path = os.path.join(root, "flutter_app", "windows", "runner", "resources", "app_icon.ico")
+    gui_rel = os.path.join(root, "python_gui", "build", "windows", "x64", "runner", "Release")
+    icon_path = os.path.join(root, "python_gui", "windows", "runner", "resources", "app_icon.ico")
     build_tmp = os.path.join(root, "scripts", "_build_single_exe")
     os.makedirs(build_tmp, exist_ok=True)
-    payload_zip = os.path.join(build_tmp, "flutter_payload.zip")
+    payload_zip = os.path.join(build_tmp, "python_app_payload.zip")
 
-    print("1. Nén gói Flutter Windows Release thành payload ZIP...")
+    print("1. Nén gói Windows Release thành payload ZIP...")
     with zipfile.ZipFile(payload_zip, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
-        for dirpath, _, filenames in os.walk(flutter_rel):
+        for dirpath, _, filenames in os.walk(gui_rel):
             for fn in sorted(filenames):
                 full = os.path.join(dirpath, fn)
-                rel = os.path.relpath(full, flutter_rel)
+                rel = os.path.relpath(full, gui_rel)
                 zf.write(full, rel)
 
     h = hashlib.sha256()

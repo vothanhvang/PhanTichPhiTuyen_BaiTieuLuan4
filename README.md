@@ -1,4 +1,4 @@
-# Phân Tích Phi Tuyến Hình Học Hệ Dàn Phẳng Bằng CALFEM (Python + Flutter 2D/3D ANSYS)
+# Phân Tích Phi Tuyến Hình Học Hệ Dàn Phẳng Bằng CALFEM (Python 2D/3D ANSYS)
 
 > **Tiểu luận môn Phân tích Phi tuyến Kết cấu**  
 > **Trường Đại học Bách Khoa – ĐHQG TP. Hồ Chí Minh** | Khoa Kỹ thuật Xây dựng – Bộ môn Công trình  
@@ -17,10 +17,10 @@ Mở trực tiếp ứng dụng mô phỏng **2D & 3D chuẩn ANSYS** (có xoay/
 
 - **Ứng dụng Web trực tuyến (GitHub Pages):** https://vothanhvang.github.io/PhanTichPhiTuyen_BaiTieuLuan4/
 - **File cài đặt / chạy trực tiếp:**
-  - **Windows x64 (bất kỳ PC Windows nào):** [`releases/PhanTichPhiTuyen_CALFEM_Windows_x64.exe`](releases/PhanTichPhiTuyen_CALFEM_Windows_x64.exe) *(nhấp đúp chạy ngay, không cần cài Python hay Flutter)*
+  - **Windows x64 (bất kỳ PC Windows nào):** [`releases/PhanTichPhiTuyen_CALFEM_Windows_x64.exe`](releases/PhanTichPhiTuyen_CALFEM_Windows_x64.exe) *(nhấp đúp chạy ngay, không cần cài Python)*
   - **Android ARM64 (Xiaomi Pad 8 Pro & Xiaomi 13T Pro):** [`releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk`](releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk)
 
-![Giao diện 3D ANSYS và Phẫu thuật mặt cắt](results/figures/fig09_app_flutter_3d_ansys.png)
+![Giao diện 3D ANSYS và Phẫu thuật mặt cắt](results/figures/fig09_app_python_3d_ansys.png)
 
 ---
 
@@ -28,7 +28,7 @@ Mở trực tiếp ứng dụng mô phỏng **2D & 3D chuẩn ANSYS** (có xoay/
 
 | Loại tài liệu | Tên tệp | Nội dung chính |
 |---|---|---|
-| **Thuyết minh Word** | [`ThuyetMinh_PhanTichPhiTuyenHinhHoc_CALFEM.docx`](ThuyetMinh_PhanTichPhiTuyenHinhHoc_CALFEM.docx) | Đầy đủ công thức Word OMML chỉnh sửa được, dẫn nguồn số trang sách & PDF, tóm tắt Toán cấp 3 + Cơ học trước khi giải, lời giải từng bước, 5 bản chất vật lý, kiến trúc Python & Flutter. |
+| **Thuyết minh Word** | [`ThuyetMinh_PhanTichPhiTuyenHinhHoc_CALFEM.docx`](ThuyetMinh_PhanTichPhiTuyenHinhHoc_CALFEM.docx) | Đầy đủ công thức Word OMML chỉnh sửa được, dẫn nguồn số trang sách & PDF, tóm tắt Toán cấp 3 + Cơ học trước khi giải, lời giải từng bước, 5 bản chất vật lý và kiến trúc phần mềm Python 2D/3D ANSYS. |
 | **Thuyết minh PDF** | [`ThuyetMinh_PhanTichPhiTuyenHinhHoc_CALFEM.pdf`](ThuyetMinh_PhanTichPhiTuyenHinhHoc_CALFEM.pdf) | Bản PDF xuất trực tiếp từ Microsoft Word, sẵn sàng in ấn & nộp bài. |
 | **Slide PowerPoint** | [`BaoCao_PhanTichPhiTuyenHinhHoc_CALFEM.pptx`](BaoCao_PhanTichPhiTuyenHinhHoc_CALFEM.pptx) | 22 slide 16:9 hiện đại phục vụ báo cáo tiểu luận trước lớp và Thầy hướng dẫn. |
 | **Slide PDF** | [`BaoCao_PhanTichPhiTuyenHinhHoc_CALFEM.pdf`](BaoCao_PhanTichPhiTuyenHinhHoc_CALFEM.pdf) | Bản PDF của bộ slide trình chiếu. |
@@ -69,14 +69,13 @@ BaiTapTieuLuan/
 │   ├── nonlinear_solvers.py    # 6 thuật toán giải NSA_6 + Buckling trị riêng + Kiểm chứng tiếp tuyến
 │   ├── probe_dissection.py     # Khảo sát bất kỳ vị trí (e, ξ, η, ζ) & Phẫu thuật mặt cắt ngang/dọc
 │   ├── report_exporter.py      # Xuất tự động Word (.docx) & PDF (.pdf)
-│   ├── api_server.py           # HTTP JSON Server kết nối Flutter Windows
+│   ├── api_server.py           # HTTP JSON Server phục vụ chế độ chạy độc lập trên Windows
 │   ├── run_full_analysis.py    # Chạy toàn bộ phân tích & xuất 8 biểu đồ 300 DPI
 │   └── test_verification.py    # Bộ kiểm thử tự động 6 trụ cột khoa học
-├── flutter_app/                # Ứng dụng Flutter Dart 2D/3D ANSYS + Phẫu thuật + Xuất Word/PDF
 ├── results/                    # Kết quả JSON, CSV và biểu đồ 300 DPI
 ├── scripts/                    # Script tạo thuyết minh Word OMML, PowerPoint 22 slide & đóng gói .exe
 ├── releases/                   # File chạy sẵn Windows .exe và Android .apk
-└── docs/                       # Bản dựng Flutter Web triển khai trực tiếp trên GitHub Pages
+└── docs/                       # Bản dựng Web triển khai trực tiếp trên GitHub Pages
 ```
 
 ### Chạy lõi Python & Kiểm thử tự động
@@ -85,12 +84,4 @@ python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
 .venv\Scripts\python -m python_core.test_verification
 .venv\Scripts\python -m python_core.run_full_analysis
-```
-
-### Chạy giao diện Flutter Dart từ mã nguồn
-```bash
-cd flutter_app
-flutter pub get
-flutter test
-flutter run -d windows   # hoặc -d chrome / thiết bị Android
 ```

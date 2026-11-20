@@ -1,4 +1,4 @@
-name: Deploy Flutter Web to GitHub Pages
+name: Deploy Python CALFEM Web to GitHub Pages
 
 on:
   push:
@@ -27,7 +27,7 @@ jobs:
         uses: actions/configure-pages@v5
         with:
           enablement: true
-      - name: Upload static Flutter Web artifact from docs/
+      - name: Upload static Python CALFEM Web artifact from docs/
         uses: actions/upload-pages-artifact@v3
         with:
           path: "docs"

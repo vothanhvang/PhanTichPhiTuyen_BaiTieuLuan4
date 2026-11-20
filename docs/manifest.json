@@ -1,11 +1,11 @@
 {
-    "name": "calfem_nonlinear_truss",
-    "short_name": "calfem_nonlinear_truss",
+    "name": "CALFEM Python — Phân tích Phi tuyến Hình học 2D/3D",
+    "short_name": "CALFEM Python",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0B162C",
+    "theme_color": "#0B162C",
+    "description": "Phần mềm Python CALFEM Phân tích Phi tuyến Hình học Hệ Dàn 2D/3D chuẩn ANSYS — ĐH Bách Khoa TP.HCM",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

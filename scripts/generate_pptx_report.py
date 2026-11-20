@@ -283,7 +283,7 @@ def build_pptx(base_dir: str) -> str:
     p_desc = tf1.add_paragraph()
     p_desc.space_before = Pt(12)
     rd = p_desc.add_run()
-    rd.text = "Đối chiếu Tuyến tính – Phi tuyến – SAP2000 – Snap-Through  |  Lõi Python & Giao diện 2D/3D ANSYS bằng Flutter Dart"
+    rd.text = "Đối chiếu Tuyến tính – Phi tuyến – SAP2000 – Snap-Through  |  Phần mềm Python & Giao diện Mô phỏng 2D/3D chuẩn ANSYS"
     rd.font.name = FONT_MAIN
     rd.font.size = Pt(15)
     rd.font.color.rgb = RGBColor(0x94, 0xA3, 0xB8)
@@ -301,7 +301,7 @@ def build_pptx(base_dir: str) -> str:
     meta_lines = [
         ("Giảng viên hướng dẫn:   ", "PGS.TS. NGÔ HỮU CƯỜNG", C_WHITE),
         ("Học viên thực hiện:       ", "LÂM PHÚC TÂM (2670621) - VÕ THANH VANG (2670624)", C_CYAN),
-        ("Sản phẩm bàn giao:        ", "Word (.docx) • PDF • PowerPoint • Python Core • Flutter 2D/3D (.exe, .apk, GitHub Web)", RGBColor(0xCB, 0xD5, 0xE1)),
+        ("Sản phẩm bàn giao:        ", "Word (.docx) • PDF • PowerPoint • Phần mềm Python 2D/3D (.exe, .apk, GitHub Web)", RGBColor(0xCB, 0xD5, 0xE1)),
         ("Kho mã nguồn & Demo:   ", "https://github.com/vothanhvang/PhanTichPhiTuyen_BaiTieuLuan4", RGBColor(0x34, 0xD3, 0x99)),
     ]
     for i, (k, v, vc) in enumerate(meta_lines):
@@ -332,7 +332,7 @@ def build_pptx(base_dir: str) -> str:
         ("03 • Kiểm chứng Sách gốc", "Xác minh lõi Python CALFEM khớp 100% CALFEM exs3.m và khớp từng chữ số 6 vòng lặp Example 9.1 (Dahlblom tr. 261).", C_CYAN),
         ("04 • Giải Bài toán 5 Thanh", "Giải chi tiết từng bước đề bài 1.jpg (P = 208 kN): Tuyến tính vs bar2g bậc 2 vs Corotational UL vs Total Lagrangian NSA_4.", C_NAVY),
         ("05 • 5 Bản chất Vật lý Sâu", "Thanh 1–2 hồi sinh, Đòn bẩy R₁y ≠ R₄y, Mềm hóa (+P) vs Cứng hóa (−P), Độ nhạy 1P→500P và Bật nhảy Snap-Through thực thụ!", C_RED),
-        ("06 • Phần mềm 2D/3D ANSYS", "Demo lõi Python + giao diện Flutter Dart 2D/3D có Phẫu thuật mặt cắt, xuất Word/PDF, đóng gói .exe/.apk & chạy trên GitHub.", C_AMBER),
+        ("06 • Phần mềm 2D/3D ANSYS", "Demo phần mềm Python 2D/3D có Phẫu thuật mặt cắt, nhập số trực tiếp, xuất Word/PDF, đóng gói .exe/.apk & chạy trên GitHub.", C_AMBER),
     ]
     for idx, (st, sd, col) in enumerate(steps_s2):
         r_i, c_i = divmod(idx, 3)
@@ -491,8 +491,8 @@ def build_pptx(base_dir: str) -> str:
     )
     _add_card(
         s8, 0.45, 5.8, 8.2, 1.0,
-        "Kiểm chứng đồng bộ Dart Core vs Python Core",
-        ["Bộ unit test tự động `flutter test` xác nhận lõi Dart chạy trên Android/Web khớp < 10⁻¹⁰ mm so với lõi Python NumPy!"],
+        "Kiểm chứng đồng bộ Phần mềm Đa nền tảng vs Lõi Python",
+        ["Bộ kiểm thử tự động xác nhận kết quả tính toán trên mọi nền tảng (Windows / Android / Web) khớp < 10⁻¹⁰ mm so với lõi Python NumPy!"],
         accent=C_TEAL, fill_color=C_LIGHT_TEAL, font_size=11.0,
     )
 
@@ -738,41 +738,41 @@ def build_pptx(base_dir: str) -> str:
         "Bộ Kiểm thử Tự động (`python_core/test_verification.py`) & Đóng gói PyInstaller",
         [
             "• Lệnh chạy kiểm thử: `python -m python_core.test_verification` — tự động xác minh toàn bộ 6 trụ cột khoa học (exs3, Dahlblom Ex 9.1, giải tích 5 thanh, xoay vật rắn 37°, tiếp tuyến sai phân 3,47×10⁻¹³, cân bằng đòn bẩy biến dạng & Snap-Through).",
-            "• Đóng gói thành tệp độc lập `calfem_engine.exe` nhúng trực tiếp vào ứng dụng Flutter Windows để chạy trên bất kỳ máy tính Windows nào không cần cài Python!",
+            "• Đóng gói thành tệp độc lập calfem_engine.exe kết hợp bản chạy Windows để sử dụng ngay trên bất kỳ máy tính Windows nào không cần cài Python!",
         ],
         accent=C_TEAL, fill_color=C_LIGHT_TEAL, font_size=11.0,
     )
 
     # ==========================================================================
-    # SLIDE 21: GIAO DIỆN FLUTTER DART 2D/3D ANSYS & TRIỂN KHAI ĐA NỀN TẢNG
+    # SLIDE 21: GIAO DIỆN PHẦN MỀM 2D/3D ANSYS & TRIỂN KHAI ĐA NỀN TẢNG
     # ==========================================================================
     s21 = prs.slides.add_slide(blank)
-    _add_header(s21, "Giao diện Flutter Dart 2D/3D chuẩn ANSYS & Đóng gói Đa nền tảng", "Một mã nguồn chạy mượt 120Hz trên Windows (.exe), Android (.apk — Xiaomi Pad 8 Pro & 13T Pro) và GitHub Web!", 21, TOTAL)
-    app_shot = os.path.join(fig_dir, "fig09_app_flutter_3d_ansys.png")
+    _add_header(s21, "Giao diện Phần mềm Python 2D/3D chuẩn ANSYS & Đóng gói Đa nền tảng", "Chạy mượt 120Hz trên Windows (.exe), Android (.apk — Xiaomi Pad 8 Pro & 13T Pro) và GitHub Web!", 21, TOTAL)
+    app_shot = os.path.join(fig_dir, "fig09_app_python_3d_ansys.png")
     if os.path.exists(app_shot):
         _add_picture_fit(s21, app_shot, 0.45, 1.18, 7.6, 5.7)
         _add_card(
             s21, 8.25, 1.18, 4.63, 5.7,
             "Tính năng Nổi bật & Đóng gói",
             [
-                "• Chế độ 2D & 3D ANSYS thật: đổ bóng Phong 3D, xoay 360°, Pan, Zoom, nút ISO/XY/XZ/YZ, thang màu cầu vồng.",
-                "• Phẫu thuật 3D cắt mở thanh tại vị trí ξ & soi ứng suất/biến dạng bên trong mặt cắt ngang.",
-                "• Xuất thuyết minh Word (.docx) & PDF (.pdf) 1 chạm ngay trong ứng dụng!",
-                "• Windows (.exe): Chạy trực tiếp trên mọi máy Windows, kết nối live Python `calfem_engine.exe`.",
+                "• Chế độ 2D & 3D ANSYS thật: đổ bóng Phong 3D, xoay 360°, Pan, Zoom, nút ISO/XY/XZ/YZ, thang màu cầu vồng & nhãn động.",
+                "• Phẫu thuật 3D cắt mở thanh tại vị trí ξ & soi ứng suất/võng P-δ bên trong mặt cắt ngang.",
+                "• Nhập số trực tiếp + Reset mặc định; xuất thuyết minh Word (.docx) & PDF (.pdf) kèm hộp thoại chọn nơi lưu!",
+                "• Windows (.exe): Chạy trực tiếp trên mọi máy Windows, kết nối live Python calfem_engine.exe.",
                 "• Android (.apk ARM64): Giao diện 3 cột trên Xiaomi Pad 8 Pro & 5 tab cảm ứng trên Xiaomi 13T Pro.",
                 "• Chạy trực tiếp trên GitHub Pages:\nvothanhvang.github.io/\nPhanTichPhiTuyen_BaiTieuLuan4/",
             ],
-            accent=C_NAVY, fill_color=C_LIGHT_BLUE, font_size=11.0,
+            accent=C_NAVY, fill_color=C_LIGHT_BLUE, font_size=10.8,
         )
     else:
         _add_card(
             s21, 0.45, 1.25, 6.0, 5.55,
-            "Trải nghiệm Mô phỏng 2D/3D chuẩn ANSYS trong Flutter Dart",
+            "Trải nghiệm Mô phỏng 2D/3D chuẩn ANSYS trong Phần mềm Python",
             [
                 "• Màn hình 2D & 3D thật (Phong Shading + Z-Buffer): dựng khối 3D tiết diện chữ I / Ống tròn / Hộp / Tròn đặc + khớp trụ 3D.",
                 "• Điều khiển y hệt ANSYS: Kéo xoay 3D 360°, kéo phải/2 ngón Pan, cuộn/chụm Zoom, góc nhìn nhanh ISO/XY/XZ/YZ.",
                 "• Chế độ 'Phẫu thuật 3D': mặt cắt xanh lơ cắt xuyên thanh tại ξ, làm trong suốt phần sau để soi mặt cắt & mũi tên nội lực!",
-                "• Tích hợp sẵn 1 chạm xuất Thuyết minh Word (.docx) & Báo cáo PDF (.pdf) ngay trên mọi thiết bị!",
+                "• Tích hợp sẵn xuất Thuyết minh Word (.docx) & Báo cáo PDF (.pdf) kèm hộp thoại chọn nơi lưu trên mọi thiết bị!",
             ],
             accent=C_NAVY, fill_color=C_LIGHT_BLUE, font_size=12.0,
         )
@@ -780,9 +780,9 @@ def build_pptx(base_dir: str) -> str:
             s21, 6.8, 1.25, 6.08, 5.55,
             "Đóng gói 3 Nền tảng & Chạy trực tiếp trên GitHub",
             [
-                "1. Windows x64 (.exe): `releases/PhanTichPhiTuyen_CALFEM_Windows_x64.exe` — mở là chạy trên mọi PC Windows 10/11, tự kết nối lõi Python `calfem_engine.exe`!",
-                "2. Android ARM64 (.apk): `releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk` — bố cục thích ứng 3 cột trên Xiaomi Pad 8 Pro (11.2\") và 5 tab gọn đẹp trên Xiaomi 13T Pro (6.67\").",
-                "3. Chạy trực tiếp trên GitHub Pages: `https://vothanhvang.github.io/PhanTichPhiTuyen_BaiTieuLuan4/` — Thầy và các bạn trong lớp mở trình duyệt dùng ngay không cần cài đặt!",
+                "1. Windows x64 (.exe): releases/PhanTichPhiTuyen_CALFEM_Windows_x64.exe — mở là chạy trên mọi PC Windows 10/11, tự kết nối lõi Python calfem_engine.exe!",
+                "2. Android ARM64 (.apk): releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk — bố cục thích ứng 3 cột trên Xiaomi Pad 8 Pro (11.2\") và 5 tab gọn đẹp trên Xiaomi 13T Pro (6.67\").",
+                "3. Chạy trực tiếp trên GitHub Pages: https://vothanhvang.github.io/PhanTichPhiTuyen_BaiTieuLuan4/ — Thầy và các bạn trong lớp mở trình duyệt dùng ngay không cần cài đặt!",
             ],
             accent=C_TEAL, fill_color=C_LIGHT_TEAL, font_size=12.0,
         )
@@ -803,7 +803,7 @@ def build_pptx(base_dir: str) -> str:
         [
             "1. Hoàn chỉnh lời giải Phi tuyến Hình học CALFEM 4 cấp (bar2e → bar2g → Corotational UL → Total Lagrangian NSA_4) và 6 thuật toán giải (NSA_6), xác minh tuyệt đối trên Dahlblom Example 9.1 & CALFEM exs3.m.",
             "2. Giải mã tường minh 5 bản chất vật lý cốt lõi (học sinh cấp 3 vẫn hiểu rõ): hồi sinh thanh 1–2, đòn bẩy phản lực biến dạng, mềm hóa (+P) vs cứng hóa (−P), bùng nổ phi tuyến tải lớn và phát hiện bật nhảy Snap-Through thực P_lim = 78,45 MN (thấp hơn 4,41 lần tải trị riêng!).",
-            "3. Xây dựng trọn bộ hệ sinh thái phần mềm Python + Flutter Dart 2D/3D chuẩn ANSYS có Phẫu thuật mặt cắt & xuất Word/PDF, đóng gói sẵn .exe Windows, .apk Android (Xiaomi Pad 8 Pro & 13T Pro) và triển khai chạy trực tiếp trên GitHub!",
+            "3. Xây dựng trọn bộ hệ sinh thái phần mềm Python 2D/3D chuẩn ANSYS có Phẫu thuật mặt cắt & xuất Word/PDF (chọn nơi lưu), đóng gói sẵn .exe Windows, .apk Android (Xiaomi Pad 8 Pro & 13T Pro) và triển khai chạy trực tiếp trên GitHub!",
         ],
         accent=C_CYAN, fill_color=RGBColor(0x11, 0x1E, 0x38), font_size=13.0,
     )

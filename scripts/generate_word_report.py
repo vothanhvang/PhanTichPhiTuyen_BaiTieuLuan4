@@ -508,7 +508,7 @@ def _add_cover_page(doc: Document) -> None:
     rt2 = pt.add_run(
         "PHÂN TÍCH PHI TUYẾN HÌNH HỌC HỆ DÀN PHẲNG 4 NÚT – 5 THANH\n"
         "DỰA TRÊN THUẬT TOÁN CALFEM (bar2e, bar2g, COROTATIONAL UL & TOTAL LAGRANGIAN),\n"
-        "XÂY DỰNG LÕI PYTHON VÀ GIAO DIỆN MÔ PHỎNG 2D/3D CHUẨN ANSYS BẰNG FLUTTER DART"
+        "XÂY DỰNG PHẦN MỀM PYTHON VÀ GIAO DIỆN MÔ PHỎNG 2D/3D CHUẨN ANSYS"
     )
     rt2.bold = True
     rt2.font.name = "Times New Roman"
@@ -533,7 +533,7 @@ def _add_cover_page(doc: Document) -> None:
         ("Giảng viên hướng dẫn:", "PGS.TS. NGÔ HỮU CƯỜNG"),
         ("Học viên thực hiện:", "LÂM PHÚC TÂM (2670621)"),
         ("", "VÕ THANH VANG (2670624)"),
-        ("Công cụ tính toán & kiểm chứng:", "Python (CALFEM 3.4), Flutter Dart (2D/3D ANSYS), SAP2000"),
+        ("Công cụ tính toán & kiểm chứng:", "Python (CALFEM 3.4, NumPy/SciPy), SAP2000"),
         ("Đóng gói triển khai:", "Windows (.exe), Android (.apk — Xiaomi Pad 8 Pro & 13T Pro), GitHub Web"),
         ("Kho mã nguồn & ứng dụng trực tuyến:", "https://github.com/vothanhvang/PhanTichPhiTuyen_BaiTieuLuan4"),
     ]
@@ -620,7 +620,7 @@ def build_word_report(base_dir: str) -> str:
             "3. Phát hiện thanh không lực 1–2 'hồi sinh': Trong tuyến tính N₁₂ ≡ 0 N, nhưng do định lý Py-ta-go khi Nút 2 dịch lên và cân bằng cấu hình biến dạng, thanh 1–2 phát sinh lực KÉO thực sự N₁₂ = +13,55 N (tại 1P) và bùng nổ lên +180,39 kN (tại 100P)!",
             "4. Bất đối xứng phản lực gối do quy tắc đòn bẩy biến dạng: Vì gối con lăn Nút 4 trượt sang phải (u₄x > 0), nhịp thực mở rộng thành 2L + u₄x làm |R₁y| = 104,0203 kN > |R₄y| = 103,9797 kN (lệch 40,57 N tại 1P).",
             "5. Phát hiện hiện tượng Bật nhảy Snap-Through thực sự của chính dàn 5 thanh: Khi đẩy tải lớn lên bằng Điều khiển chuyển vị / Chiều dài cung, kết cấu đạt điểm giới hạn thực P_lim = 78,45 MN tại u₂y = 480 mm — thấp hơn 4,41 lần so với tải trị riêng tuyến tính hóa P_cr = 346,00 MN!",
-            "6. Đóng gói phần mềm hoàn chỉnh: Lõi Python CALFEM + Giao diện Flutter Dart mô phỏng 2D/3D chuẩn ANSYS có tính năng 'Phẫu thuật mặt cắt' soi ứng suất/biến dạng bên trong, xuất báo cáo Word/PDF tức thì, đóng gói .exe Windows, .apk Android (Xiaomi Pad 8 Pro & 13T Pro) và triển khai chạy trực tiếp trên GitHub!",
+            "6. Đóng gói phần mềm hoàn chỉnh bằng Python: Lõi tính toán Python CALFEM kết hợp giao diện mô phỏng 2D/3D chuẩn ANSYS có tính năng 'Phẫu thuật mặt cắt' soi ứng suất/biến dạng bên trong, nhập thông số trực tiếp kèm Reset mặc định, xuất báo cáo Word/PDF (có hộp thoại chọn nơi lưu), đóng gói .exe Windows, .apk Android (Xiaomi Pad 8 Pro & 13T Pro) và triển khai chạy trực tiếp trên GitHub!",
         ],
         fill_hex="F0FDF4",
         accent_hex="0F766E",
@@ -1445,11 +1445,11 @@ def build_word_report(base_dir: str) -> str:
     )
 
     # --------------------------------------------------------------------------
-    # CHƯƠNG 6: LẬP TRÌNH PYTHON & FLUTTER DART 2D/3D ANSYS, ĐÓNG GÓI & GITHUB
+    # CHƯƠNG 6: LẬP TRÌNH PYTHON, GIAO DIỆN 2D/3D ANSYS, ĐÓNG GÓI & GITHUB
     # --------------------------------------------------------------------------
-    add_h1(doc, "CHƯƠNG 6. KIẾN TRÚC LẬP TRÌNH PYTHON, GIAO DIỆN FLUTTER DART 2D/3D CHUẨN ANSYS VÀ ĐÓNG GÓI ĐA NỀN TẢNG", page_break=True)
+    add_h1(doc, "CHƯƠNG 6. KIẾN TRÚC LẬP TRÌNH PYTHON, GIAO DIỆN MÔ PHỎNG 2D/3D CHUẨN ANSYS VÀ ĐÓNG GÓI ĐA NỀN TẢNG", page_break=True)
 
-    add_h2(doc, "6.1. Cấu trúc mô-đun lõi tính toán Python (`python_core/`)")
+    add_h2(doc, "6.1. Cấu trúc mô-đun lõi tính toán Python (python_core/)")
     add_p(
         doc,
         "Toàn bộ lõi tính toán được viết bằng Python 3.11 + NumPy/SciPy theo kiến trúc tách lớp mô-đun sạch sẽ, toàn bộ docstring, "
@@ -1465,7 +1465,7 @@ def build_word_report(base_dir: str) -> str:
             ["nonlinear_solvers.py", "solve_linear_calfem, solve_calfem_bar2g_second_order, solve_corotational_newton_raphson, modified_nr, euler, rk2, displacement_control, arc_length, solve_elastic_buckling_eigen", "Triển khai trọn bộ 6 thuật toán giải phi tuyến NSA_6 + bài toán trị riêng tải tới hạn + kiểm chứng tiếp tuyến sai phân trung tâm."],
             ["probe_dissection.py", "probe_member_at, dissect_cross_section, compute_longitudinal_profile", "Khảo sát nội suy tại bất kỳ tọa độ (e, ξ, η, ζ), tính ứng suất von Mises, τ_max Mohr, co giãn ngang Poisson và phẫu thuật mặt cắt."],
             ["report_exporter.py", "export_quick_docx_report, export_quick_pdf_report", "Xuất thuyết minh Word (.docx) và Báo cáo PDF (.pdf) tiếng Việt trực tiếp từ bất kỳ lần chạy tính toán nào."],
-            ["api_server.py & engine_entry.py", "CalfemAPIHandler (/api/analyze, /api/probe, /api/export_report)", "Cầu nối HTTP JSON cục bộ đóng gói thành `calfem_engine.exe` bằng PyInstaller để chạy trực tiếp cùng Flutter Windows."],
+            ["api_server.py & engine_entry.py", "CalfemAPIHandler (/api/analyze, /api/probe, /api/export_report)", "Cầu nối HTTP JSON cục bộ đóng gói thành calfem_engine.exe bằng PyInstaller phục vụ chạy độc lập trên Windows."],
         ],
         header_fill="0F3D6E",
         col_widths_cm=[3.4, 5.4, 8.0],
@@ -1494,35 +1494,35 @@ def build_word_report(base_dir: str) -> str:
     return f_int, Kt, N, strain_eng, l_cur''',
     )
 
-    add_h2(doc, "6.2. Thiết kế giao diện Flutter Dart hiện đại chuẩn ANSYS & Đóng gói đa nền tảng")
+    add_h2(doc, "6.2. Thiết kế giao diện mô phỏng 2D/3D chuẩn ANSYS & Đóng gói đa nền tảng")
     add_p(
         doc,
-        "Giao diện người dùng được phát triển bằng Flutter 3.50 / Dart 3.14 với kiến trúc thích ứng (Responsive Adaptive Studio) "
-        "và kết hợp song song hai lõi tính toán: (1) kết nối trực tiếp lõi Python `calfem_engine.exe` trên Windows Desktop và "
-        "(2) lõi Dart CALFEM đồng bộ 100% (đã kiểm thử tự động khớp < 10⁻⁹ mm với Python) giúp chạy mượt mà hoàn toàn ngoại tuyến "
-        "trên Android và trình duyệt Web:",
+        "Giao diện mô phỏng trực quan của phần mềm được xây dựng đồng bộ với lõi tính toán Python CALFEM theo kiến trúc thích ứng "
+        "(Responsive Adaptive Studio), cho phép nhập trực tiếp mọi thông số đầu vào kèm nút Reset về mặc định, xoay/pan/zoom 3D chuẩn ANSYS, "
+        "phẫu thuật mặt cắt nhạy cao theo vị trí lát cắt ξ, hiển thị số liệu đồng bộ theo trường kết quả và mở hộp thoại chọn nơi lưu báo cáo Word/PDF "
+        "(đã kiểm thử tự động khớp < 10⁻⁹ mm với lõi Python trên mọi nền tảng):",
     )
     add_styled_table(
         doc,
         ["Nền tảng / Thiết bị đích", "Tệp bàn giao / Địa chỉ chạy", "Tính năng & Tối ưu hóa nổi bật"],
         [
-            ["Máy tính Windows 10/11 (bất kỳ máy nào)", "releases/PhanTichPhiTuyen_CALFEM_Windows_x64.exe\n(và thư mục releases/Windows_Portable/)", "File .exe đóng gói chạy trực tiếp không cần cài Python hay Flutter; tự động chạy kèm lõi Python CALFEM `calfem_engine.exe`; xuất báo cáo Word/PDF vào Documents."],
-            ["Máy tính bảng Xiaomi Pad 8 Pro (11.2\" 3.2K, ARM64)", "releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk", "Bố cục Workbench 3 cột chuẩn ngang như máy trạm ANSYS; hỗ trợ đa cửa sổ HyperOS, xoay 3D mượt 120Hz, chạm phẫu thuật mặt cắt & lưu Word/PDF vào Download."],
+            ["Máy tính Windows 10/11 (bất kỳ máy nào)", "releases/PhanTichPhiTuyen_CALFEM_Windows_x64.exe\n(và thư mục releases/Windows_Portable/)", "File .exe đóng gói chạy trực tiếp không cần cài Python; hỗ trợ chạy kèm lõi Python calfem_engine.exe; hộp thoại Windows Save As xuất báo cáo Word/PDF."],
+            ["Máy tính bảng Xiaomi Pad 8 Pro (11.2\" 3.2K, ARM64)", "releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk", "Bố cục Workbench 3 cột chuẩn ngang như máy trạm ANSYS; hỗ trợ đa cửa sổ HyperOS, xoay 3D mượt 120Hz, chạm phẫu thuật mặt cắt & hộp thoại chọn nơi lưu Word/PDF."],
             ["Điện thoại Xiaomi 13T Pro (6.67\" ARM64)", "releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk", "Tự động chuyển sang giao diện 5 tab gọn gàng tối ưu một tay; xoay 3D 1 ngón, pan 2 ngón, chụm zoom và xuất Word/PDF trực tiếp trên điện thoại."],
-            ["Chạy trực tiếp trên GitHub (Mọi trình duyệt)", "https://vothanhvang.github.io/PhanTichPhiTuyen_BaiTieuLuan4/\n(mã nguồn: github.com/vothanhvang/PhanTichPhiTuyen_BaiTieuLuan4)", "Triển khai bản dựng Flutter Web lên GitHub Pages (`docs/`): giảng viên và các bạn trong lớp mở link chạy ngay mô phỏng 2D/3D ANSYS & tải báo cáo Word/PDF!"],
+            ["Chạy trực tiếp trên GitHub (Mọi trình duyệt)", "https://vothanhvang.github.io/PhanTichPhiTuyen_BaiTieuLuan4/\n(mã nguồn: github.com/vothanhvang/PhanTichPhiTuyen_BaiTieuLuan4)", "Triển khai bản dựng Web trực tiếp trên GitHub Pages (thư mục docs/): giảng viên và các bạn trong lớp mở link chạy ngay mô phỏng 2D/3D ANSYS & tải báo cáo Word/PDF!"],
         ],
         header_fill="0F766E",
         col_widths_cm=[3.8, 5.6, 7.4],
         font_size=8.6,
     )
 
-    # Chèn ảnh chụp thực tế của ứng dụng Flutter nếu đã tồn tại trong results/figures/
-    app_shot_3d = os.path.join(fig_dir, "fig09_app_flutter_3d_ansys.png")
+    # Chèn ảnh chụp thực tế của ứng dụng nếu đã tồn tại trong results/figures/
+    app_shot_3d = os.path.join(fig_dir, "fig09_app_python_3d_ansys.png")
     if os.path.exists(app_shot_3d):
         add_figure(
             doc,
             app_shot_3d,
-            "Hình 6.1: Ảnh chụp giao diện thực tế ứng dụng Flutter Dart (chế độ 3D chuẩn ANSYS kết hợp Phẫu thuật mặt cắt & Xuất Word/PDF).",
+            "Hình 6.1: Ảnh chụp giao diện thực tế phần mềm Python CALFEM (chế độ 3D chuẩn ANSYS kết hợp Phẫu thuật mặt cắt, nhập thông số trực tiếp & Xuất Word/PDF).",
             width_cm=16.4,
         )
 
@@ -1547,7 +1547,7 @@ def build_word_report(base_dir: str) -> str:
     )
     add_p(
         doc,
-        "3. Hệ sinh thái phần mềm tự phát triển gồm lõi tính toán Python chú thích đầy đủ tiếng Việt kết hợp giao diện Flutter Dart "
+        "3. Hệ sinh thái phần mềm tự phát triển dựa trên lõi tính toán Python chú thích đầy đủ tiếng Việt kết hợp giao diện "
         "mô phỏng 2D/3D chuẩn ANSYS có chức năng khảo sát & phẫu thuật mặt cắt và tự động xuất thuyết minh Word/PDF đã được đóng gói "
         "thành công sang Windows (.exe), Android (.apk cho Xiaomi Pad 8 Pro & Xiaomi 13T Pro) và triển khai chạy trực tiếp trên GitHub.",
     )
