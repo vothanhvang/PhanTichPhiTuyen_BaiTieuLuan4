@@ -46,9 +46,11 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
   double _loadFactor = 1.0;
   int _nSteps = 10;
 
-  // Tùy chọn liên kết gối tựa tại từng nút (hỗ trợ đủ 8 loại liên kết + lò xo đàn hồi)
+  // Tùy chọn liên kết gối tựa & hướng liên kết tại từng nút (hỗ trợ đủ 8 loại liên kết + 4 hướng xoay)
   List<NodeSupportType> _nodeSupports =
       List<NodeSupportType>.from(TrussModelData.defaultSupportsFor(TrussPreset.assignment5Bar));
+  List<SupportDirection> _supportDirections =
+      List<SupportDirection>.filled(4, SupportDirection.auto);
   double _springStiffnessKnMm = 500.0;
   // Chế độ hiển thị liên kết (Sơ đồ tính ↔ Chi tiết gia công chế tạo) & Thông số thiết kế liên kết
   ConnectionDisplayMode _connectionMode = ConnectionDisplayMode.schematic;
@@ -115,6 +117,9 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
     if (_nodeSupports.length != defSup.length) {
       _nodeSupports = List<NodeSupportType>.from(defSup);
     }
+    if (_supportDirections.length != defSup.length) {
+      _supportDirections = List<SupportDirection>.filled(defSup.length, SupportDirection.auto);
+    }
     _model = TrussModelData.create(
       preset: _preset,
       lMm: _lMm,
@@ -123,6 +128,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
       pKn: _pKn,
       sectionShape: _sectionShape,
       customSupports: _nodeSupports,
+      customDirections: _supportDirections,
       springStiffnessKnMm: _springStiffnessKnMm,
     );
     if (_selectedElem >= _model.nElems) {
@@ -617,7 +623,9 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   onPressed: () => _updateAndSolve(() {
-                    _nodeSupports = List<NodeSupportType>.from(TrussModelData.defaultSupportsFor(_preset));
+                    final defSup = TrussModelData.defaultSupportsFor(_preset);
+                    _nodeSupports = List<NodeSupportType>.from(defSup);
+                    _supportDirections = List<SupportDirection>.filled(defSup.length, SupportDirection.auto);
                     _springStiffnessKnMm = 500.0;
                   }),
                   child: const Text('Khôi phục gối', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
@@ -819,6 +827,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
       _zetaNorm = 0.0;
       _imperfectionRatio = 0.002;
       _nodeSupports = List<NodeSupportType>.from(TrussModelData.defaultSupportsFor(TrussPreset.assignment5Bar));
+      _supportDirections = List<SupportDirection>.filled(4, SupportDirection.auto);
       _springStiffnessKnMm = 500.0;
       _connectionMode = ConnectionDisplayMode.schematic;
       _connParams = const ConnectionDesignParams();
@@ -872,7 +881,9 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                   if (v == null) return;
                   _updateAndSolve(() {
                     _preset = v;
-                    _nodeSupports = List<NodeSupportType>.from(TrussModelData.defaultSupportsFor(v));
+                    final defSup = TrussModelData.defaultSupportsFor(v);
+                    _nodeSupports = List<NodeSupportType>.from(defSup);
+                    _supportDirections = List<SupportDirection>.filled(defSup.length, SupportDirection.auto);
                     _loadFactor = 1.0;
                     _deformScale = v == TrussPreset.dahlblomEx91 ? 3.0 : (v == TrussPreset.vonMisesArch ? 5.0 : 180.0);
                   });
@@ -943,7 +954,9 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                       ),
                       onPressed: () => _updateAndSolve(() {
-                        _nodeSupports = List<NodeSupportType>.from(TrussModelData.defaultSupportsFor(_preset));
+                        final defSup = TrussModelData.defaultSupportsFor(_preset);
+                        _nodeSupports = List<NodeSupportType>.from(defSup);
+                        _supportDirections = List<SupportDirection>.filled(defSup.length, SupportDirection.auto);
                         _springStiffnessKnMm = 500.0;
                       }),
                       icon: const Icon(Icons.undo, size: 12.5),
@@ -1040,6 +1053,47 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                           },
                         ),
                       ),
+                      if (_nodeSupports[i] != NodeSupportType.free) ...[
+                        const SizedBox(width: 5),
+                        Tooltip(
+                          message: 'Chỉnh hướng liên kết Nút ${i + 1} (Hiện tại: ${_supportDirections[i].label})',
+                          child: PopupMenuButton<SupportDirection>(
+                            padding: EdgeInsets.zero,
+                            initialValue: _supportDirections[i],
+                            onSelected: (d) => _updateAndSolve(() {
+                              final next = List<SupportDirection>.from(_supportDirections);
+                              next[i] = d;
+                              _supportDirections = next;
+                            }),
+                            itemBuilder: (_) => [
+                              for (final d in SupportDirection.values)
+                                PopupMenuItem(
+                                  value: d,
+                                  height: 32,
+                                  child: Text(d.label, style: const TextStyle(fontSize: 11.5)),
+                                ),
+                            ],
+                            child: Container(
+                              width: 36,
+                              height: 31,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0EA5E9).withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.55)),
+                              ),
+                              child: Text(
+                                _supportDirections[i].shortIcon,
+                                style: const TextStyle(
+                                  fontSize: 10.2,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF38BDF8),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1352,6 +1406,13 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
           if (nodeIdx >= 0 && nodeIdx < next.length) {
             next[nodeIdx] = newType;
             _nodeSupports = next;
+          }
+        }),
+        onDirectionChanged: (nodeIdx, newDir) => _updateAndSolve(() {
+          final next = List<SupportDirection>.from(_supportDirections);
+          if (nodeIdx >= 0 && nodeIdx < next.length) {
+            next[nodeIdx] = newDir;
+            _supportDirections = next;
           }
         }),
       );

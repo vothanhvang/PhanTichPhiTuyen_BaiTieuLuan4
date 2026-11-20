@@ -1085,17 +1085,14 @@ class _Ansys3DPainter extends CustomPainter {
         }
       }
 
-      // Kéo dài tai bản mã nối xuống/lên bản đế nếu nút có gối tựa
+      // Kéo dài tai bản mã nối tới bản đế theo đúng hướng nút đã chọn (↓ / ↑ / ← / →)
+      final dir = model.resolvedDirectionFor(i);
+      final out3 = _dirOut3D(dir);
+      final tang3 = _Vec3(-out3.y, out3.x, 0.0);
       if (sup != NodeSupportType.free) {
-        final sgnY = isTop ? 1.0 : -1.0;
-        if (sup == NodeSupportType.rollerY || sup == NodeSupportType.springX) {
-          final sgnX = isRight ? 1.0 : -1.0;
-          hullPts.add(Offset(p.x + sgnX * 95, p.y - 68));
-          hullPts.add(Offset(p.x + sgnX * 95, p.y + 68));
-        } else {
-          hullPts.add(Offset(p.x - 85, p.y + sgnY * 95));
-          hullPts.add(Offset(p.x + 85, p.y + sgnY * 95));
-        }
+        final cExt = Offset(p.x + out3.x * 95.0, p.y + out3.y * 95.0);
+        hullPts.add(cExt - Offset(tang3.x * 80.0, tang3.y * 80.0));
+        hullPts.add(cExt + Offset(tang3.x * 80.0, tang3.y * 80.0));
       }
 
       // Đùn 2 tấm bản mã kẹp 3D màu xanh công nghiệp ở mặt trước & mặt sau nút
@@ -1114,72 +1111,65 @@ class _Ansys3DPainter extends CustomPainter {
         );
       }
 
-      // CHI TIẾT GỐI TỰA CHẾ TẠO 3D (BẢN ĐẾ, SƯỜN, BU-LÔNG NEO, MÓNG BÊ TÔNG / CON LĂN / LÒ XO)
+      // CHI TIẾT GỐI TỰA CHẾ TẠO 3D XOAY ĐỦ 4 HƯỚNG (BẢN ĐẾ, SƯỜN, BU-LÔNG NEO, MÓNG / CON LĂN / LÒ XO)
       const steelCol = Color(0xFF64748B);
       const concreteCol = Color(0xFF475569);
       const anchorCol = Color(0xFFFACC15);
+      final isHorizDir = dir == SupportDirection.left || dir == SupportDirection.right;
+
+      void addOrientedBox(_Vec3 c, double alongOut, double acrossTang, double dz, Color col) {
+        _addBox3D(
+          faces,
+          c,
+          isHorizDir ? alongOut : acrossTang,
+          isHorizDir ? acrossTang : alongOut,
+          dz,
+          col,
+        );
+      }
 
       if (sup == NodeSupportType.pin) {
-        // Tự động hướng bản đế & móng bê tông ra phía ngoài nút (biên trên → +Y, biên dưới → -Y)
-        final sgn = isTop ? 1.0 : -1.0;
-        final bpY = p.y + sgn * 108.0;
-        // Bản đế thép dày BP + 2 sườn tăng cứng + 4 bu-lông neo M24 + Khối móng bê tông 3D
-        _addBox3D(faces, _Vec3(p.x, bpY, 0), 270, 26, 180, steelCol);
-        _addBox3D(faces, _Vec3(p.x - 75, bpY - sgn * 42, 0), 16, 62, 130, const Color(0xFF475569));
-        _addBox3D(faces, _Vec3(p.x + 75, bpY - sgn * 42, 0), 16, 62, 130, const Color(0xFF475569));
-        _addBox3D(faces, _Vec3(p.x, bpY + sgn * 52, 0), 350, 78, 240, concreteCol);
-        for (final ax in [-105.0, 105.0]) {
+        final bpCenter = p + out3 * 108.0;
+        addOrientedBox(bpCenter, 26, 270, 180, steelCol);
+        addOrientedBox(bpCenter - out3 * 42.0 - tang3 * 75.0, 62, 16, 130, const Color(0xFF475569));
+        addOrientedBox(bpCenter - out3 * 42.0 + tang3 * 75.0, 62, 16, 130, const Color(0xFF475569));
+        addOrientedBox(bpCenter + out3 * 52.0, 78, 350, 240, concreteCol);
+        for (final off in [-105.0, 105.0]) {
           for (final az in [-62.0, 62.0]) {
-            _addBox3D(faces, _Vec3(p.x + ax, bpY - sgn * 12, az), 18, 52, 18, anchorCol);
+            addOrientedBox(bpCenter - out3 * 12.0 + tang3 * off + _Vec3(0, 0, az), 52, 18, 18, anchorCol);
           }
         }
-      } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX) {
-        final sgn = isTop ? 1.0 : -1.0;
-        final p1Y = p.y + sgn * 102.0;
-        final rolY = p.y + sgn * 136.0;
-        final p2Y = p.y + sgn * 170.0;
-        final concY = p.y + sgn * 212.0;
-        _addBox3D(faces, _Vec3(p.x, p1Y, 0), 230, 22, 165, steelCol);
-        for (final rx in [-58.0, 58.0]) {
+      } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX || sup == NodeSupportType.rollerY) {
+        addOrientedBox(p + out3 * 102.0, 22, 230, 165, steelCol);
+        for (final off in [-58.0, 58.0]) {
+          final rc = p + out3 * 136.0 + tang3 * off;
           _addPrismFaces(
             faces,
-            _Vec3(p.x + rx, rolY, -78.0),
-            _Vec3(p.x + rx, rolY, 78.0),
+            _Vec3(rc.x, rc.y, -78.0),
+            _Vec3(rc.x, rc.y, 78.0),
             rollerProfile,
             const Color(0xFF38BDF8),
           );
         }
-        _addBox3D(faces, _Vec3(p.x, p2Y, 0), 270, 24, 185, steelCol);
-        _addBox3D(faces, _Vec3(p.x, concY, 0), 330, 60, 230, concreteCol);
-      } else if (sup == NodeSupportType.rollerY) {
-        final sgn = isRight ? 1.0 : -1.0;
-        final p1X = p.x + sgn * 102.0;
-        final rolX = p.x + sgn * 136.0;
-        final p2X = p.x + sgn * 170.0;
-        final concX = p.x + sgn * 212.0;
-        _addBox3D(faces, _Vec3(p1X, p.y, 0), 22, 230, 165, steelCol);
-        for (final ry in [-58.0, 58.0]) {
-          _addPrismFaces(
-            faces,
-            _Vec3(rolX, p.y + ry, -78.0),
-            _Vec3(rolX, p.y + ry, 78.0),
-            rollerProfile,
-            const Color(0xFF38BDF8),
-          );
-        }
-        _addBox3D(faces, _Vec3(p2X, p.y, 0), 24, 270, 185, steelCol);
-        _addBox3D(faces, _Vec3(concX, p.y, 0), 60, 330, 230, concreteCol);
+        addOrientedBox(p + out3 * 170.0, 24, 270, 185, steelCol);
+        addOrientedBox(p + out3 * 212.0, 60, 330, 230, concreteCol);
       }
 
       if (sup.hasSpringY) {
-        final sgn = isTop ? 1.0 : -1.0;
+        final rawDir = i < model.supportDirections.length ? model.supportDirections[i] : SupportDirection.auto;
+        final sgn = rawDir == SupportDirection.top
+            ? 1.0
+            : (rawDir == SupportDirection.bottom ? -1.0 : (isTop ? 1.0 : -1.0));
         final p0y = model.coords[i][1];
         _addBox3D(faces, _Vec3(p.x, p.y + sgn * 96.0, 0), 210, 20, 155, steelCol);
         _addBox3D(faces, _Vec3(p.x, p0y + sgn * 195.0, 0), 245, 22, 180, steelCol);
         _addBox3D(faces, _Vec3(p.x, p0y + sgn * 234.0, 0), 300, 56, 220, concreteCol);
       }
       if (sup.hasSpringX) {
-        final sgn = isRight ? 1.0 : -1.0;
+        final rawDir = i < model.supportDirections.length ? model.supportDirections[i] : SupportDirection.auto;
+        final sgn = rawDir == SupportDirection.right
+            ? 1.0
+            : (rawDir == SupportDirection.left ? -1.0 : (isRight ? 1.0 : -1.0));
         final p0x = model.coords[i][0];
         _addBox3D(faces, _Vec3(p.x + sgn * 96.0, p.y, 0), 20, 210, 155, steelCol);
         _addBox3D(faces, _Vec3(p0x + sgn * 195.0, p.y, 0), 22, 245, 180, steelCol);
@@ -1230,7 +1220,10 @@ class _Ansys3DPainter extends CustomPainter {
       final isTop = model.coords[i][1] > midY + 1e-3;
       final isRight = model.coords[i][0] > midX + 1e-3;
       if (sup.hasSpringY) {
-        final sgn = isTop ? 1.0 : -1.0;
+        final rawDir = i < model.supportDirections.length ? model.supportDirections[i] : SupportDirection.auto;
+        final sgn = rawDir == SupportDirection.top
+            ? 1.0
+            : (rawDir == SupportDirection.bottom ? -1.0 : (isTop ? 1.0 : -1.0));
         final p0y = model.coords[i][1];
         for (final off in [-48.0, 48.0]) {
           drawCoil3D(
@@ -1241,7 +1234,10 @@ class _Ansys3DPainter extends CustomPainter {
         }
       }
       if (sup.hasSpringX) {
-        final sgn = isRight ? 1.0 : -1.0;
+        final rawDir = i < model.supportDirections.length ? model.supportDirections[i] : SupportDirection.auto;
+        final sgn = rawDir == SupportDirection.right
+            ? 1.0
+            : (rawDir == SupportDirection.left ? -1.0 : (isRight ? 1.0 : -1.0));
         final p0x = model.coords[i][0];
         for (final off in [-48.0, 48.0]) {
           drawCoil3D(
@@ -1251,6 +1247,20 @@ class _Ansys3DPainter extends CustomPainter {
           );
         }
       }
+    }
+  }
+
+  _Vec3 _dirOut3D(SupportDirection dir) {
+    switch (dir) {
+      case SupportDirection.top:
+        return const _Vec3(0, 1, 0);
+      case SupportDirection.left:
+        return const _Vec3(-1, 0, 0);
+      case SupportDirection.right:
+        return const _Vec3(1, 0, 0);
+      case SupportDirection.bottom:
+      case SupportDirection.auto:
+        return const _Vec3(0, -1, 0);
     }
   }
 
@@ -1314,56 +1324,49 @@ class _Ansys3DPainter extends CustomPainter {
       final isTop = model.coords[i][1] > midY + 1e-3;
       final isRight = model.coords[i][0] > midX + 1e-3;
 
+      final dir = model.resolvedDirectionFor(i);
+      final out3 = _dirOut3D(dir);
+      final tang3 = _Vec3(-out3.y, out3.x, 0.0);
+
       if (sup == NodeSupportType.pin) {
-        final sgn = isTop ? 1.0 : -1.0;
-        final a = cam.project(p + _Vec3(0, sgn * unit * 0.25, 0)).pt;
-        final b = cam.project(p + _Vec3(-unit * 0.65, sgn * unit * 1.15, 0)).pt;
-        final c = cam.project(p + _Vec3(unit * 0.65, sgn * unit * 1.15, 0)).pt;
+        final a = cam.project(p + out3 * (unit * 0.25)).pt;
+        final b = cam.project(p + out3 * (unit * 1.15) - tang3 * (unit * 0.65)).pt;
+        final c = cam.project(p + out3 * (unit * 1.15) + tang3 * (unit * 0.65)).pt;
         final tri = Path()..moveTo(a.dx, a.dy)..lineTo(b.dx, b.dy)..lineTo(c.dx, c.dy)..close();
         canvas.drawPath(tri, supFill);
         canvas.drawPath(tri, supStroke);
-        final g1 = cam.project(p + _Vec3(-unit * 0.9, sgn * unit * 1.2, 0)).pt;
-        final g2 = cam.project(p + _Vec3(unit * 0.9, sgn * unit * 1.2, 0)).pt;
+        final g1 = cam.project(p + out3 * (unit * 1.2) - tang3 * (unit * 0.9)).pt;
+        final g2 = cam.project(p + out3 * (unit * 1.2) + tang3 * (unit * 0.9)).pt;
         canvas.drawLine(g1, g2, supStroke);
-      } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX) {
-        final sgn = isTop ? 1.0 : -1.0;
-        final a = cam.project(p + _Vec3(0, sgn * unit * 0.25, 0)).pt;
-        final b = cam.project(p + _Vec3(-unit * 0.6, sgn * unit * 1.05, 0)).pt;
-        final c = cam.project(p + _Vec3(unit * 0.6, sgn * unit * 1.05, 0)).pt;
+      } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX || sup == NodeSupportType.rollerY) {
+        final a = cam.project(p + out3 * (unit * 0.25)).pt;
+        final b = cam.project(p + out3 * (unit * 1.05) - tang3 * (unit * 0.6)).pt;
+        final c = cam.project(p + out3 * (unit * 1.05) + tang3 * (unit * 0.6)).pt;
         final tri = Path()..moveTo(a.dx, a.dy)..lineTo(b.dx, b.dy)..lineTo(c.dx, c.dy)..close();
         canvas.drawPath(tri, supFill);
         canvas.drawPath(tri, supStroke);
-        final w1 = cam.project(p + _Vec3(-unit * 0.3, sgn * unit * 1.28, 0)).pt;
-        final w2 = cam.project(p + _Vec3(unit * 0.3, sgn * unit * 1.28, 0)).pt;
+        final w1 = cam.project(p + out3 * (unit * 1.28) - tang3 * (unit * 0.3)).pt;
+        final w2 = cam.project(p + out3 * (unit * 1.28) + tang3 * (unit * 0.3)).pt;
         canvas.drawCircle(w1, 3.8, Paint()..color = const Color(0xFF38BDF8));
         canvas.drawCircle(w2, 3.8, Paint()..color = const Color(0xFF38BDF8));
-        final g1 = cam.project(p + _Vec3(-unit * 0.85, sgn * unit * 1.5, 0)).pt;
-        final g2 = cam.project(p + _Vec3(unit * 0.85, sgn * unit * 1.5, 0)).pt;
-        canvas.drawLine(g1, g2, supStroke);
-      } else if (sup == NodeSupportType.rollerY) {
-        final sgn = isRight ? 1.0 : -1.0;
-        final a = cam.project(p + _Vec3(sgn * unit * 0.25, 0, 0)).pt;
-        final b = cam.project(p + _Vec3(sgn * unit * 1.05, -unit * 0.6, 0)).pt;
-        final c = cam.project(p + _Vec3(sgn * unit * 1.05, unit * 0.6, 0)).pt;
-        final tri = Path()..moveTo(a.dx, a.dy)..lineTo(b.dx, b.dy)..lineTo(c.dx, c.dy)..close();
-        canvas.drawPath(tri, supFill);
-        canvas.drawPath(tri, supStroke);
-        final w1 = cam.project(p + _Vec3(sgn * unit * 1.28, -unit * 0.3, 0)).pt;
-        final w2 = cam.project(p + _Vec3(sgn * unit * 1.28, unit * 0.3, 0)).pt;
-        canvas.drawCircle(w1, 3.8, Paint()..color = const Color(0xFF38BDF8));
-        canvas.drawCircle(w2, 3.8, Paint()..color = const Color(0xFF38BDF8));
-        final g1 = cam.project(p + _Vec3(sgn * unit * 1.5, -unit * 0.85, 0)).pt;
-        final g2 = cam.project(p + _Vec3(sgn * unit * 1.5, unit * 0.85, 0)).pt;
+        final g1 = cam.project(p + out3 * (unit * 1.5) - tang3 * (unit * 0.85)).pt;
+        final g2 = cam.project(p + out3 * (unit * 1.5) + tang3 * (unit * 0.85)).pt;
         canvas.drawLine(g1, g2, supStroke);
       }
 
       if (sup.hasSpringY) {
-        final sgn = isTop ? 1.0 : -1.0;
+        final rawDir = i < model.supportDirections.length ? model.supportDirections[i] : SupportDirection.auto;
+        final sgn = rawDir == SupportDirection.top
+            ? 1.0
+            : (rawDir == SupportDirection.bottom ? -1.0 : (isTop ? 1.0 : -1.0));
         final anchorY = _Vec3(p.x, p0.y + sgn * unit * 1.8, 0.0);
         drawSpring3D(p + _Vec3(0, sgn * unit * 0.25, 0), anchorY, const _Vec3(1, 0, 0), 'kᵧ');
       }
       if (sup.hasSpringX) {
-        final sgn = isRight ? 1.0 : -1.0;
+        final rawDir = i < model.supportDirections.length ? model.supportDirections[i] : SupportDirection.auto;
+        final sgn = rawDir == SupportDirection.right
+            ? 1.0
+            : (rawDir == SupportDirection.left ? -1.0 : (isRight ? 1.0 : -1.0));
         final anchorX = _Vec3(p0.x + sgn * unit * 1.8, p.y, 0.0);
         drawSpring3D(p + _Vec3(sgn * unit * 0.25, 0, 0), anchorX, const _Vec3(0, 1, 0), 'kₓ');
       }

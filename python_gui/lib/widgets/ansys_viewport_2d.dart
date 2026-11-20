@@ -702,46 +702,55 @@ class _Ansys2DPainter extends CustomPainter {
         canvas.drawCircle(p, 10.0, Paint()..color = const Color(0xFFF59E0B));
         canvas.drawCircle(p, 10.0, edgeStroke);
       }
-      // Bệ bản đế + bu-lông neo + khối móng bê tông cho chế độ chi tiết chế tạo 2D
-      if (sup == NodeSupportType.pin) {
-        final sgn = isTop ? -1.0 : 1.0;
-        final bp = Rect.fromCenter(center: Offset(p.dx, p.dy + sgn * 22), width: 42, height: 6);
-        final mc = Rect.fromCenter(center: Offset(p.dx, p.dy + sgn * 34), width: 56, height: 18);
-        canvas.drawRect(mc, concFill);
-        canvas.drawRect(mc, edgeStroke);
-        canvas.drawRect(bp, plateFill);
-        canvas.drawRect(bp, edgeStroke);
-        for (final ax in [-14.0, 14.0]) {
-          canvas.drawLine(Offset(p.dx + ax, p.dy + sgn * 16), Offset(p.dx + ax, p.dy + sgn * 36),
-              Paint()..color = const Color(0xFFFACC15)..strokeWidth = 2.0);
-        }
-      } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX) {
-        final sgn = isTop ? -1.0 : 1.0;
-        final p1 = Rect.fromCenter(center: Offset(p.dx, p.dy + sgn * 18), width: 36, height: 5);
-        final p2 = Rect.fromCenter(center: Offset(p.dx, p.dy + sgn * 30), width: 42, height: 5);
-        final mc = Rect.fromCenter(center: Offset(p.dx, p.dy + sgn * 39), width: 52, height: 12);
-        canvas.drawRect(mc, concFill);
-        canvas.drawRect(mc, edgeStroke);
-        canvas.drawRect(p1, plateFill);
-        canvas.drawRect(p1, edgeStroke);
-        canvas.drawRect(p2, plateFill);
-        canvas.drawRect(p2, edgeStroke);
-        canvas.drawCircle(Offset(p.dx - 8, p.dy + sgn * 24), 3.6, Paint()..color = const Color(0xFF38BDF8));
-        canvas.drawCircle(Offset(p.dx + 8, p.dy + sgn * 24), 3.6, Paint()..color = const Color(0xFF38BDF8));
-      } else if (sup == NodeSupportType.rollerY) {
-        final sgn = isRight ? 1.0 : -1.0;
-        final p1 = Rect.fromCenter(center: Offset(p.dx + sgn * 18, p.dy), width: 5, height: 36);
-        final p2 = Rect.fromCenter(center: Offset(p.dx + sgn * 30, p.dy), width: 5, height: 42);
-        final mc = Rect.fromCenter(center: Offset(p.dx + sgn * 39, p.dy), width: 12, height: 52);
-        canvas.drawRect(mc, concFill);
-        canvas.drawRect(mc, edgeStroke);
-        canvas.drawRect(p1, plateFill);
-        canvas.drawRect(p1, edgeStroke);
-        canvas.drawRect(p2, plateFill);
-        canvas.drawRect(p2, edgeStroke);
-        canvas.drawCircle(Offset(p.dx + sgn * 24, p.dy - 8), 3.6, Paint()..color = const Color(0xFF38BDF8));
-        canvas.drawCircle(Offset(p.dx + sgn * 24, p.dy + 8), 3.6, Paint()..color = const Color(0xFF38BDF8));
+      // Bệ bản đế + bu-lông neo + khối móng bê tông cho chế độ chi tiết chế tạo 2D (xoay đủ 4 hướng!)
+      final dir = model.resolvedDirectionFor(i);
+      final out2 = _dirOut2D(dir);
+      final tang2 = Offset(-out2.dy, out2.dx);
+
+      void drawOrientedRect(Offset centerPt, double alongLen, double acrossLen, Paint fill) {
+        final ha = 0.5 * alongLen;
+        final hw = 0.5 * acrossLen;
+        final rectP = Path()
+          ..moveTo((centerPt - out2 * ha - tang2 * hw).dx, (centerPt - out2 * ha - tang2 * hw).dy)
+          ..lineTo((centerPt + out2 * ha - tang2 * hw).dx, (centerPt + out2 * ha - tang2 * hw).dy)
+          ..lineTo((centerPt + out2 * ha + tang2 * hw).dx, (centerPt + out2 * ha + tang2 * hw).dy)
+          ..lineTo((centerPt - out2 * ha + tang2 * hw).dx, (centerPt - out2 * ha + tang2 * hw).dy)
+          ..close();
+        canvas.drawPath(rectP, fill);
+        canvas.drawPath(rectP, edgeStroke);
       }
+
+      if (sup == NodeSupportType.pin) {
+        drawOrientedRect(p + out2 * 34.0, 18.0, 56.0, concFill);
+        drawOrientedRect(p + out2 * 22.0, 6.0, 42.0, plateFill);
+        for (final off in [-14.0, 14.0]) {
+          canvas.drawLine(
+            p + out2 * 16.0 + tang2 * off,
+            p + out2 * 36.0 + tang2 * off,
+            Paint()..color = const Color(0xFFFACC15)..strokeWidth = 2.0,
+          );
+        }
+      } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX || sup == NodeSupportType.rollerY) {
+        drawOrientedRect(p + out2 * 39.0, 12.0, 52.0, concFill);
+        drawOrientedRect(p + out2 * 18.0, 5.0, 36.0, plateFill);
+        drawOrientedRect(p + out2 * 30.0, 5.0, 42.0, plateFill);
+        canvas.drawCircle(p + out2 * 24.0 - tang2 * 8.0, 3.6, Paint()..color = const Color(0xFF38BDF8));
+        canvas.drawCircle(p + out2 * 24.0 + tang2 * 8.0, 3.6, Paint()..color = const Color(0xFF38BDF8));
+      }
+    }
+  }
+
+  Offset _dirOut2D(SupportDirection dir) {
+    switch (dir) {
+      case SupportDirection.top:
+        return const Offset(0, -1);
+      case SupportDirection.left:
+        return const Offset(-1, 0);
+      case SupportDirection.right:
+        return const Offset(1, 0);
+      case SupportDirection.bottom:
+      case SupportDirection.auto:
+        return const Offset(0, 1);
     }
   }
 
@@ -819,66 +828,57 @@ class _Ansys2DPainter extends CustomPainter {
       final isTop = model.coords[i][1] > midY + 1e-3;
       final isRight = model.coords[i][0] > midX + 1e-3;
 
+      final dir = model.resolvedDirectionFor(i);
+      final out = _dirOut2D(dir);
+      final tang = Offset(-out.dy, out.dx);
+
       if (connectionMode == ConnectionDisplayMode.schematic) {
         if (sup == NodeSupportType.pin) {
-          // Tự động hướng gối cố định ra phía ngoài kết cấu (nút biên trên → lên trên, nút biên dưới → xuống dưới)
-          final sgn = isTop ? -1.0 : 1.0;
           final tri = Path()
-            ..moveTo(p.dx, p.dy + sgn * 7)
-            ..lineTo(p.dx - 13, p.dy + sgn * 24)
-            ..lineTo(p.dx + 13, p.dy + sgn * 24)
+            ..moveTo((p + out * 7.0).dx, (p + out * 7.0).dy)
+            ..lineTo((p + out * 24.0 - tang * 13.0).dx, (p + out * 24.0 - tang * 13.0).dy)
+            ..lineTo((p + out * 24.0 + tang * 13.0).dx, (p + out * 24.0 + tang * 13.0).dy)
             ..close();
           canvas.drawPath(tri, Paint()..color = const Color(0xFF334155));
           canvas.drawPath(tri, supPaint);
           drawGroundHatch(
-            Offset(p.dx - 18, p.dy + sgn * 25),
-            Offset(p.dx + 18, p.dy + sgn * 25),
-            Offset(0, sgn),
+            p + out * 25.0 - tang * 18.0,
+            p + out * 25.0 + tang * 18.0,
+            out,
           );
-        } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX) {
-          final sgn = isTop ? -1.0 : 1.0;
+        } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerXSpringX || sup == NodeSupportType.rollerY) {
           final tri = Path()
-            ..moveTo(p.dx, p.dy + sgn * 7)
-            ..lineTo(p.dx - 12, p.dy + sgn * 22)
-            ..lineTo(p.dx + 12, p.dy + sgn * 22)
+            ..moveTo((p + out * 7.0).dx, (p + out * 7.0).dy)
+            ..lineTo((p + out * 22.0 - tang * 12.0).dx, (p + out * 22.0 - tang * 12.0).dy)
+            ..lineTo((p + out * 22.0 + tang * 12.0).dx, (p + out * 22.0 + tang * 12.0).dy)
             ..close();
           canvas.drawPath(tri, Paint()..color = const Color(0xFF334155));
           canvas.drawPath(tri, supPaint);
-          canvas.drawCircle(Offset(p.dx - 6, p.dy + sgn * 26), 3.5, supPaint);
-          canvas.drawCircle(Offset(p.dx + 6, p.dy + sgn * 26), 3.5, supPaint);
+          canvas.drawCircle(p + out * 26.0 - tang * 6.0, 3.5, supPaint);
+          canvas.drawCircle(p + out * 26.0 + tang * 6.0, 3.5, supPaint);
           drawGroundHatch(
-            Offset(p.dx - 18, p.dy + sgn * 30),
-            Offset(p.dx + 18, p.dy + sgn * 30),
-            Offset(0, sgn),
-          );
-        } else if (sup == NodeSupportType.rollerY) {
-          final sgn = isRight ? 1.0 : -1.0;
-          final tri = Path()
-            ..moveTo(p.dx + sgn * 7, p.dy)
-            ..lineTo(p.dx + sgn * 22, p.dy - 12)
-            ..lineTo(p.dx + sgn * 22, p.dy + 12)
-            ..close();
-          canvas.drawPath(tri, Paint()..color = const Color(0xFF334155));
-          canvas.drawPath(tri, supPaint);
-          canvas.drawCircle(Offset(p.dx + sgn * 26, p.dy - 6), 3.5, supPaint);
-          canvas.drawCircle(Offset(p.dx + sgn * 26, p.dy + 6), 3.5, supPaint);
-          drawGroundHatch(
-            Offset(p.dx + sgn * 30, p.dy - 18),
-            Offset(p.dx + sgn * 30, p.dy + 18),
-            Offset(sgn, 0),
+            p + out * 30.0 - tang * 18.0,
+            p + out * 30.0 + tang * 18.0,
+            out,
           );
         }
       }
 
       if (sup.hasSpringY) {
-        final sgn = isTop ? -1.0 : 1.0;
-        final anchorY = Offset(p.dx, p0.dy + sgn * 42.0);
-        drawSpring2D(Offset(p.dx, p.dy + sgn * 7.0), anchorY, 'kᵧ');
+        final rawDir = i < model.supportDirections.length ? model.supportDirections[i] : SupportDirection.auto;
+        final sgnY = (rawDir == SupportDirection.top)
+            ? -1.0
+            : (rawDir == SupportDirection.bottom ? 1.0 : (isTop ? -1.0 : 1.0));
+        final anchorY = Offset(p.dx, p0.dy + sgnY * 42.0);
+        drawSpring2D(Offset(p.dx, p.dy + sgnY * 7.0), anchorY, 'kᵧ');
       }
       if (sup.hasSpringX) {
-        final sgn = isRight ? 1.0 : -1.0;
-        final anchorX = Offset(p0.dx + sgn * 44.0, p.dy);
-        drawSpring2D(Offset(p.dx + sgn * 7.0, p.dy), anchorX, 'kₓ');
+        final rawDir = i < model.supportDirections.length ? model.supportDirections[i] : SupportDirection.auto;
+        final sgnX = (rawDir == SupportDirection.right)
+            ? 1.0
+            : (rawDir == SupportDirection.left ? -1.0 : (isRight ? 1.0 : -1.0));
+        final anchorX = Offset(p0.dx + sgnX * 44.0, p.dy);
+        drawSpring2D(Offset(p.dx + sgnX * 7.0, p.dy), anchorX, 'kₓ');
       }
 
       // Vẽ mũi tên tải trọng ngoài P

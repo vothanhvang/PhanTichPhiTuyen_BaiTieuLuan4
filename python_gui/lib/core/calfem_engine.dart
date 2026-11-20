@@ -79,6 +79,20 @@ enum NodeSupportType {
   int get restraintCount => (locksX || hasSpringX ? 1 : 0) + (locksY || hasSpringY ? 1 : 0);
 }
 
+/// Hướng bố trí hình học của liên kết gối tựa tại nút (Sơ đồ tính & Chi tiết chế tạo 2D/3D)
+enum SupportDirection {
+  auto('Tự động', 'Auto', 'AUTO'),
+  bottom('Dưới (↓)', '↓', 'BOTTOM'),
+  top('Trên (↑)', '↑', 'TOP'),
+  left('Trái (←)', '←', 'LEFT'),
+  right('Phải (→)', '→', 'RIGHT');
+
+  final String label;
+  final String shortIcon;
+  final String code;
+  const SupportDirection(this.label, this.shortIcon, this.code);
+}
+
 /// Chế độ hiển thị liên kết nút: Sơ đồ tính cơ học ↔ Chi tiết gia công chế tạo
 enum ConnectionDisplayMode {
   schematic('Sơ đồ tính', 'SCHEMATIC'),
@@ -226,6 +240,7 @@ class TrussModelData {
   final double fyRef;              // MPa (tham khảo)
   final List<int> fixedDofs0;      // Chỉ số DOF bị khóa cứng (0-based)
   final List<NodeSupportType> nodeSupports; // Loại liên kết tại từng nút
+  final List<SupportDirection> supportDirections; // Hướng gối tựa tại từng nút
   final double springStiffnessKnMm;         // Độ cứng lò xo đàn hồi k (kN/mm)
   final List<double> fRef;         // Véc-tơ tải trọng tham chiếu (N)
   final List<String> memberLabels;
@@ -246,6 +261,7 @@ class TrussModelData {
     required this.fyRef,
     required this.fixedDofs0,
     required this.nodeSupports,
+    this.supportDirections = const [],
     this.springStiffnessKnMm = 500.0,
     required this.fRef,
     required this.memberLabels,
@@ -255,6 +271,27 @@ class TrussModelData {
     required this.baseA,
     required this.basePKn,
   });
+
+  /// Trả về hướng bố trí thực tế (bottom / top / left / right) của liên kết tại nút `i`
+  SupportDirection resolvedDirectionFor(int i) {
+    final raw = i < supportDirections.length ? supportDirections[i] : SupportDirection.auto;
+    if (raw != SupportDirection.auto) return raw;
+    double minX = double.infinity, maxX = -double.infinity;
+    double minY = double.infinity, maxY = -double.infinity;
+    for (final c in coords) {
+      minX = math.min(minX, c[0]);
+      maxX = math.max(maxX, c[0]);
+      minY = math.min(minY, c[1]);
+      maxY = math.max(maxY, c[1]);
+    }
+    final isTop = coords[i][1] > 0.5 * (minY + maxY) + 1e-3;
+    final isRight = coords[i][0] > 0.5 * (minX + maxX) + 1e-3;
+    final sup = i < nodeSupports.length ? nodeSupports[i] : NodeSupportType.free;
+    if (sup == NodeSupportType.rollerY || sup == NodeSupportType.springX) {
+      return isRight ? SupportDirection.right : SupportDirection.left;
+    }
+    return isTop ? SupportDirection.top : SupportDirection.bottom;
+  }
 
   int get nNodes => coords.length;
   int get nElems => conn.length;
@@ -351,12 +388,16 @@ class TrussModelData {
     double nu = 0.30,
     SectionShape sectionShape = SectionShape.iSection,
     List<NodeSupportType>? customSupports,
+    List<SupportDirection>? customDirections,
     double springStiffnessKnMm = 500.0,
   }) {
     final defSup = defaultSupportsFor(preset);
     final supports = (customSupports != null && customSupports.length == defSup.length)
         ? List<NodeSupportType>.from(customSupports)
         : List<NodeSupportType>.from(defSup);
+    final directions = (customDirections != null && customDirections.length == defSup.length)
+        ? List<SupportDirection>.from(customDirections)
+        : List<SupportDirection>.filled(defSup.length, SupportDirection.auto);
     final fixed = fixedDofsFromSupports(supports);
 
     switch (preset) {
@@ -379,6 +420,7 @@ class TrussModelData {
           fyRef: 355.0,
           fixedDofs0: fixed,
           nodeSupports: supports,
+          supportDirections: directions,
           springStiffnessKnMm: springStiffnessKnMm,
           fRef: const [0.0, 0.0, 0.0, 0.0, -10.0e6, -0.2e6],
           memberLabels: const ['1-3 (AB)', '2-3 (CB)'],
@@ -409,6 +451,7 @@ class TrussModelData {
           fyRef: 250.0,
           fixedDofs0: fixed,
           nodeSupports: supports,
+          supportDirections: directions,
           springStiffnessKnMm: springStiffnessKnMm,
           fRef: const [0.0, 0.0, 0.0, 0.0, 0.0, -80000.0, 0.0, 0.0],
           memberLabels: const ['1-3', '3-4', '2-3'],
@@ -437,6 +480,7 @@ class TrussModelData {
           fyRef: 250.0,
           fixedDofs0: fixed,
           nodeSupports: supports,
+          supportDirections: directions,
           springStiffnessKnMm: springStiffnessKnMm,
           fRef: [0.0, 0.0, 0.0, -pKn * 1000.0, 0.0, 0.0],
           memberLabels: const ['1-2', '2-3'],
@@ -472,6 +516,7 @@ class TrussModelData {
           fyRef: 250.0,
           fixedDofs0: fixed,
           nodeSupports: supports,
+          supportDirections: directions,
           springStiffnessKnMm: springStiffnessKnMm,
           fRef: [0.0, 0.0, 0.0, pKn * 1000.0, 0.0, 0.0, 0.0, 0.0],
           memberLabels: const ['1-2', '1-3', '3-4', '3-2', '2-4'],
