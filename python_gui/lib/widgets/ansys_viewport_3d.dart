@@ -18,6 +18,7 @@
 // ============================================================================
 
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../core/calfem_engine.dart';
@@ -72,9 +73,8 @@ class _AnsysViewport3DState extends State<AnsysViewport3D> {
     });
   }
 
-  List<double> _fieldValues() {
+  List<double> _fieldValues(double frac) {
     final ne = widget.model.nElems;
-    final frac = widget.playbackFraction;
     switch (widget.field) {
       case ContourField.axialStress:
         return [for (int e = 0; e < ne; e++) widget.result.stressMpa[e] * frac];
@@ -105,9 +105,29 @@ class _AnsysViewport3DState extends State<AnsysViewport3D> {
 
   @override
   Widget build(BuildContext context) {
-    final vals = _fieldValues();
-    final minV = vals.reduce(math.min);
-    final maxV = vals.reduce(math.max);
+    final vals = _fieldValues(widget.playbackFraction);
+    // Khóa cố định thang đo [minV, maxV] theo trạng thái 100% tải (frac = 1.0)
+    // để khi chạy mô phỏng video tăng tải (0% → 100%), dải màu Gradient 3D trên các thanh
+    // biến đổi sóng cầu vồng liên tục theo đúng mức tải tức thời!
+    final fullVals = _fieldValues(1.0);
+    double minV = fullVals.reduce(math.min);
+    double maxV = fullVals.reduce(math.max);
+    if (widget.field == ContourField.displacement) {
+      minV = 0.0;
+      maxV = 0.0;
+      for (int i = 0; i < widget.model.nNodes; i++) {
+        final uMag = math.sqrt(
+          math.pow(widget.result.uMm[2 * i], 2) +
+              math.pow(widget.result.uMm[2 * i + 1], 2),
+        );
+        if (uMag > maxV) maxV = uMag;
+      }
+    } else if (widget.field == ContourField.strainEnergyDensity) {
+      minV = 0.0;
+    } else {
+      minV = math.min(0.0, minV);
+      maxV = math.max(0.0, maxV);
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -296,7 +316,7 @@ class _AnsysViewport3DState extends State<AnsysViewport3D> {
                   border: Border.all(color: const Color(0xFF06B6D4).withValues(alpha: 0.4)),
                 ),
                 child: Text(
-                  'Kéo trái/1 ngón: Xoay 3D ANSYS  •  Kéo phải/2 ngón: Pan  •  Cuộn/Chụm: Zoom  •  Chạm thanh: Khảo sát & Phẫu thuật 3D',
+                  'Kéo trái/1 ngón: Xoay 3D  •  Kéo phải/2 ngón: Pan  •  Cuộn/Chụm: Zoom  •  Chạm thanh: Khảo sát & Phẫu thuật 3D',
                   style: TextStyle(
                     fontSize: 10.2,
                     color: widget.darkMode ? const Color(0xFF94A3B8) : const Color(0xFF334155),
@@ -413,6 +433,10 @@ class _Face3D {
   final bool drawEdge;
   final Color edgeColor;
   final double depth;
+  // Tùy chọn dải màu Gradient liên tục dọc trục thanh 3D (dùng cho Chuyển vị tổng ||u||)
+  final _Vec3? gradStart;
+  final _Vec3? gradEnd;
+  final List<Color>? gradColors;
 
   const _Face3D({
     required this.verts,
@@ -421,6 +445,9 @@ class _Face3D {
     this.alpha = 1.0,
     this.drawEdge = true,
     this.edgeColor = const Color(0x550F172A),
+    this.gradStart,
+    this.gradEnd,
+    this.gradColors,
   });
 }
 
@@ -504,6 +531,7 @@ class _Ansys3DPainter extends CustomPainter {
     Color color, {
     double alpha = 1.0,
     bool highlightEndCap = false,
+    List<Color>? gradientColors,
   }) {
     final axis = (pEnd - pStart).normalized();
     const zAxis = _Vec3(0, 0, 1);
@@ -518,20 +546,32 @@ class _Ansys3DPainter extends CustomPainter {
       ringB.add(pEnd + offset);
     }
 
+    final hasGrad = gradientColors != null && gradientColors.length >= 2;
+    final startColor = hasGrad ? gradientColors.first : color;
+    final endColor = hasGrad ? gradientColors.last : color;
+
     final n = profile.length;
     for (int i = 0; i < n; i++) {
       final j = (i + 1) % n;
       final quad = [ringA[i], ringB[i], ringB[j], ringA[j]];
       final avgDepth = quad.map((v) => cam.toCameraSpace(v).z).reduce((a, b) => a + b) / 4.0;
-      faces.add(_Face3D(verts: quad, baseColor: color, depth: avgDepth, alpha: alpha));
+      faces.add(_Face3D(
+        verts: quad,
+        baseColor: color,
+        depth: avgDepth,
+        alpha: alpha,
+        gradStart: hasGrad ? (ringA[i] + ringA[j]) * 0.5 : null,
+        gradEnd: hasGrad ? (ringB[i] + ringB[j]) * 0.5 : null,
+        gradColors: hasGrad ? gradientColors : null,
+      ));
     }
-    // Mặt nắp đầu & cuối (nếu là mặt cắt phẫu thuật -> tô sáng rực rỡ!)
+    // Mặt nắp đầu & cuối (nếu dùng Gradient -> lấy đúng màu tại nút đầu/mặt cắt cuối!)
     final depthA = ringA.map((v) => cam.toCameraSpace(v).z).reduce((a, b) => a + b) / n;
     final depthB = ringB.map((v) => cam.toCameraSpace(v).z).reduce((a, b) => a + b) / n;
-    faces.add(_Face3D(verts: ringA.reversed.toList(), baseColor: color, depth: depthA, alpha: alpha));
+    faces.add(_Face3D(verts: ringA.reversed.toList(), baseColor: startColor, depth: depthA, alpha: alpha));
     faces.add(_Face3D(
       verts: ringB,
-      baseColor: highlightEndCap ? const Color(0xFFFFD600) : color,
+      baseColor: highlightEndCap ? (hasGrad ? endColor : const Color(0xFFFFD600)) : endColor,
       depth: depthB + (highlightEndCap ? 2.0 : 0.0),
       alpha: highlightEndCap ? 0.98 : alpha,
       edgeColor: highlightEndCap ? const Color(0xFF00E5FF) : const Color(0x550F172A),
@@ -579,28 +619,68 @@ class _Ansys3DPainter extends CustomPainter {
         ),
     ];
 
+    // Hàm nội suy liên tục giá trị trường kết quả tại ξ ∈ [0, 1] dọc thanh e
+    double valueAt3D(int e, double xi) {
+      if (field == ContourField.displacement) {
+        final ni = model.conn[e][0] - 1;
+        final nj = model.conn[e][1] - 1;
+        final ux = (1.0 - xi) * result.uMm[2 * ni] + xi * result.uMm[2 * nj];
+        final uy = (1.0 - xi) * result.uMm[2 * ni + 1] + xi * result.uMm[2 * nj + 1];
+        return math.sqrt(ux * ux + uy * uy) * playbackFraction;
+      }
+      return values[e];
+    }
+
+    List<Color>? buildGradColors(int e, double xiA, double xiB) {
+      if (field != ContourField.displacement) return null;
+      const nStops = 16;
+      return [
+        for (int s = 0; s < nStops; s++)
+          ansysRainbowColor(
+            ((valueAt3D(e, xiA + (xiB - xiA) * s / (nStops - 1)) - minVal) / span).clamp(0.0, 1.0),
+          ),
+      ];
+    }
+
     for (int e = 0; e < model.nElems; e++) {
       final ni = model.conn[e][0] - 1;
       final nj = model.conn[e][1] - 1;
       final p1 = nodePos3D[ni];
       final p2 = nodePos3D[nj];
-      final tVal = ((values[e] - minVal) / span).clamp(0.0, 1.0);
+      final tVal = ((valueAt3D(e, 0.5) - minVal) / span).clamp(0.0, 1.0);
       final col = ansysRainbowColor(tVal);
       final dims = SectionDimensions.fromArea(model.sectionShape, model.areas[e]);
       final profile = _crossSectionPolygon(model.sectionShape, dims.height, dims.width);
 
       if (surgicalMode && e == selectedElem) {
         // PHẪU THUẬT 3D: Cắt thanh tại vị trí ξ!
-        // Phần trước [0, ξ]: khối đặc có nắp phẫu thuật phát sáng
-        // Phần sau [ξ, 1]: cắt rời làm mờ trong suốt để quan sát bên trong!
+        // Phần trước [0, ξ]: khối đặc có nắp phẫu thuật + Gradient liên tục
+        // Phần sau [ξ, 1]: cắt rời làm mờ trong suốt + Gradient liên tục!
         final pCut = p1 + (p2 - p1) * probeXi;
         if (probeXi > 0.03) {
-          _addPrismFaces(faces, p1, pCut, profile, col, alpha: 1.0, highlightEndCap: true);
+          _addPrismFaces(
+            faces,
+            p1,
+            pCut,
+            profile,
+            col,
+            alpha: 1.0,
+            highlightEndCap: true,
+            gradientColors: buildGradColors(e, 0.0, probeXi),
+          );
         }
         if (probeXi < 0.97) {
-          _addPrismFaces(faces, pCut, p2, profile, col, alpha: 0.16);
+          _addPrismFaces(
+            faces,
+            pCut,
+            p2,
+            profile,
+            col,
+            alpha: 0.26,
+            gradientColors: buildGradColors(e, probeXi, 1.0),
+          );
         }
-        // Mặt phẳng dao cắt ANSYS trong suốt màu xanh lơ vuông góc trục thanh
+        // Mặt phẳng dao cắt trong suốt màu xanh lơ vuông góc trục thanh
         final axis = (p2 - p1).normalized();
         final vAxis = const _Vec3(0, 0, 1).cross(axis).normalized();
         final wAxis = const _Vec3(0, 0, 1);
@@ -620,26 +700,46 @@ class _Ansys3DPainter extends CustomPainter {
           edgeColor: const Color(0xFF00E5FF),
         ));
       } else {
-        _addPrismFaces(faces, p1, p2, profile, col, alpha: 0.96);
+        _addPrismFaces(
+          faces,
+          p1,
+          p2,
+          profile,
+          col,
+          alpha: 0.96,
+          gradientColors: buildGradColors(e, 0.0, 1.0),
+        );
       }
     }
 
-    // Khớp trụ 3D tại mỗi nút
+    // Khớp trụ 3D tại mỗi nút (tô màu chuyển vị nút thật khi đang xem Chuyển vị tổng ||u||)
     final pinProfile = _crossSectionPolygon(SectionShape.solidRod, 68, 68);
     for (int i = 0; i < model.nNodes; i++) {
       final p = nodePos3D[i];
+      Color pinColor = const Color(0xFFCBD5E1);
+      if (field == ContourField.displacement) {
+        final uNode = math.sqrt(math.pow(result.uMm[2 * i], 2) + math.pow(result.uMm[2 * i + 1], 2)) * playbackFraction;
+        pinColor = ansysRainbowColor(((uNode - minVal) / span).clamp(0.0, 1.0));
+      }
       _addPrismFaces(
         faces,
         _Vec3(p.x, p.y, -75),
         _Vec3(p.x, p.y, 75),
         pinProfile,
-        const Color(0xFFCBD5E1),
+        pinColor,
       );
     }
 
-    // 4. Sắp xếp Z-Buffer (từ xa tới gần) và đổ bóng Phong 3D
+    // 4. Sắp xếp Z-Buffer (từ xa tới gần) và đổ bóng Phong 3D + Gradient liên tục
     faces.sort((a, b) => a.depth.compareTo(b.depth));
     final lightDir = const _Vec3(0.45, 0.65, 0.85).normalized();
+
+    Color shadeColor(Color base, double shade, double spec, double alpha) {
+      final r = ((base.r * 255 * shade + spec * 255).round()).clamp(0, 255);
+      final g = ((base.g * 255 * shade + spec * 255).round()).clamp(0, 255);
+      final b = ((base.b * 255 * shade + spec * 255).round()).clamp(0, 255);
+      return Color.fromARGB((alpha * 255).round().clamp(0, 255), r, g, b);
+    }
 
     for (final f in faces) {
       if (f.verts.length < 3) continue;
@@ -647,14 +747,10 @@ class _Ansys3DPainter extends CustomPainter {
       final c1 = cam.toCameraSpace(f.verts[1]);
       final c2 = cam.toCameraSpace(f.verts[2]);
       final normal = (c1 - c0).cross(c2 - c0).normalized();
-      // Đổ bóng Lambert hai mặt + điểm sáng Specular nhẹ kiểu ANSYS Solid Shaded
+      // Đổ bóng Lambert hai mặt + điểm sáng Specular nhẹ
       final diff = normal.dot(lightDir).abs();
       final shade = (0.34 + 0.66 * diff).clamp(0.25, 1.08);
       final spec = math.pow(diff, 14) * 0.24;
-
-      final r = ((f.baseColor.r * 255 * shade + spec * 255).round()).clamp(0, 255);
-      final g = ((f.baseColor.g * 255 * shade + spec * 255).round()).clamp(0, 255);
-      final b = ((f.baseColor.b * 255 * shade + spec * 255).round()).clamp(0, 255);
 
       final path = Path();
       final first = cam.project(f.verts[0]).pt;
@@ -665,12 +761,24 @@ class _Ansys3DPainter extends CustomPainter {
       }
       path.close();
 
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = Color.fromARGB((f.alpha * 255).round().clamp(0, 255), r, g, b)
-          ..style = PaintingStyle.fill,
-      );
+      final fillPaint = Paint()..style = PaintingStyle.fill;
+      if (f.gradColors != null && f.gradStart != null && f.gradEnd != null) {
+        final sA = cam.project(f.gradStart!).pt;
+        final sB = cam.project(f.gradEnd!).pt;
+        if ((sB - sA).distance > 1.0) {
+          final nC = f.gradColors!.length;
+          final shadedCols = [
+            for (final c in f.gradColors!) shadeColor(c, shade, spec, f.alpha),
+          ];
+          final stops = [for (int s = 0; s < nC; s++) s / (nC - 1)];
+          fillPaint.shader = ui.Gradient.linear(sA, sB, shadedCols, stops);
+        } else {
+          fillPaint.color = shadeColor(f.baseColor, shade, spec, f.alpha);
+        }
+      } else {
+        fillPaint.color = shadeColor(f.baseColor, shade, spec, f.alpha);
+      }
+      canvas.drawPath(path, fillPaint);
       if (f.drawEdge) {
         canvas.drawPath(
           path,
@@ -723,10 +831,11 @@ class _Ansys3DPainter extends CustomPainter {
         );
       }
       final cutScreen = cam.project(pCut).pt;
+      final cutVal = valueAt3D(eSel, probeXi);
       _drawLabel(
         canvas,
         cutScreen + const Offset(14, -24),
-        'MẶT CẮT PHẪU THUẬT ξ=${probeXi.toStringAsFixed(2)}\n${field.symbol} = ${field.formatValue(values[eSel])}',
+        'MẶT CẮT PHẪU THUẬT ξ=${probeXi.toStringAsFixed(2)}\n${field.symbol} = ${field.formatValue(cutVal)}',
         const Color(0xFF00E5FF),
       );
     }
@@ -739,11 +848,12 @@ class _Ansys3DPainter extends CustomPainter {
       final p2 = nodePos3D[model.conn[e][1] - 1];
       final mid3 = (p1 + p2) * 0.5;
       final sp = cam.project(mid3).pt;
-      final tCol = ((values[e] - minVal) / span3d).clamp(0.0, 1.0);
+      final midV = valueAt3D(e, 0.5);
+      final tCol = ((midV - minVal) / span3d).clamp(0.0, 1.0);
       _drawBadge3D(
         canvas,
         sp + Offset(0, e == 0 ? 16 : (e == 2 ? -16 : 0)),
-        'T${e + 1}: ${field.formatValue(values[e])}',
+        'T${e + 1}: ${field.formatValue(midV)}',
         ansysRainbowColor(tCol),
       );
     }

@@ -50,6 +50,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
   bool _darkMode = true;
   double _deformScale = 180.0;
   double _playbackFrac = 1.0;
+  int _peakHoldTicks = 0;
   Timer? _animTimer;
 
   // Trạng thái khảo sát & Phẫu thuật (Probe & Dissection)
@@ -147,18 +148,30 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
       setState(() {
         _animTimer = null;
         _playbackFrac = 1.0;
+        _peakHoldTicks = 0;
       });
       return;
     }
-    _playbackFrac = 0.0;
-    _animTimer = Timer.periodic(const Duration(milliseconds: 36), (t) {
+    setState(() {
+      _playbackFrac = 0.0;
+      _peakHoldTicks = 0;
+    });
+    _animTimer = Timer.periodic(const Duration(milliseconds: 30), (t) {
       if (!mounted) {
         t.cancel();
         return;
       }
       setState(() {
-        _playbackFrac += 0.025;
-        if (_playbackFrac > 1.0) _playbackFrac = 0.0;
+        if (_playbackFrac < 1.0) {
+          _playbackFrac = (_playbackFrac + 0.018).clamp(0.0, 1.0);
+        } else {
+          // Giữ lại ~0.55 giây ở trạng thái 100% tải để quan sát rõ dải Gradient cực đại
+          _peakHoldTicks++;
+          if (_peakHoldTicks >= 18) {
+            _playbackFrac = 0.0;
+            _peakHoldTicks = 0;
+          }
+        }
       });
     });
   }
@@ -442,7 +455,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
               SegmentedButton<bool>(
                 segments: const [
                   ButtonSegment(value: false, icon: Icon(Icons.grid_on, size: 15), label: Text('2D', style: TextStyle(fontSize: 11))),
-                  ButtonSegment(value: true, icon: Icon(Icons.view_in_ar, size: 15), label: Text('3D ANSYS', style: TextStyle(fontSize: 11))),
+                  ButtonSegment(value: true, icon: Icon(Icons.view_in_ar, size: 15), label: Text('3D', style: TextStyle(fontSize: 11))),
                 ],
                 selected: {_is3D},
                 onSelectionChanged: (s) => setState(() => _is3D = s.first),
@@ -468,11 +481,27 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
               ),
               OutlinedButton.icon(
                 onPressed: _toggleAnimation,
-                icon: Icon(_animTimer == null ? Icons.play_arrow : Icons.stop, size: 16),
-                label: Text(_animTimer == null ? 'Chạy mô phỏng tải' : 'Dừng', style: const TextStyle(fontSize: 11)),
+                icon: Icon(
+                  _animTimer == null ? Icons.play_arrow : Icons.stop,
+                  size: 16,
+                  color: _animTimer == null ? null : const Color(0xFFF43F5E),
+                ),
+                label: Text(
+                  _animTimer == null
+                      ? 'Chạy mô phỏng tải'
+                      : 'Dừng (${(_playbackFrac * 100).round()}%)',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: _animTimer == null ? FontWeight.normal : FontWeight.bold,
+                    color: _animTimer == null ? null : const Color(0xFFF43F5E),
+                  ),
+                ),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   visualDensity: VisualDensity.compact,
+                  side: _animTimer == null
+                      ? null
+                      : const BorderSide(color: Color(0xFFF43F5E), width: 1.3),
                 ),
               ),
             ],
@@ -538,10 +567,11 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
               const SizedBox(width: 14),
               Expanded(
                 child: Text(
+                  '${_animTimer != null ? "▶ Tải ${(100 * _playbackFrac).round()}%  |  " : ""}'
                   'Đầu dò: Thanh ${probe.memberLabel} (ξ=${probe.xi.toStringAsFixed(2)})  |  '
-                  'σ=${probe.sigmaXxMpa.toStringAsFixed(2)} MPa  |  '
-                  'ε=${probe.epsXxMicro.toStringAsFixed(1)} με  |  '
-                  '||u||=${probe.uMagMm.toStringAsFixed(4)} mm',
+                  'σ=${(probe.sigmaXxMpa * _playbackFrac).toStringAsFixed(2)} MPa  |  '
+                  'ε=${(probe.epsXxMicro * _playbackFrac).toStringAsFixed(1)} με  |  '
+                  '||u||=${(probe.uMagMm * _playbackFrac).toStringAsFixed(4)} mm',
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 10.8, fontFamily: 'DejaVuSansMono'),
                 ),

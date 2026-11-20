@@ -11,6 +11,7 @@
 // ============================================================================
 
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../core/calfem_engine.dart';
@@ -59,9 +60,8 @@ class _AnsysViewport2DState extends State<AnsysViewport2D> {
     });
   }
 
-  List<double> _fieldValuesPerElem() {
+  List<double> _fieldValuesPerElem(double frac) {
     final ne = widget.model.nElems;
-    final frac = widget.playbackFraction;
     switch (widget.field) {
       case ContourField.axialStress:
         return [for (int e = 0; e < ne; e++) widget.result.stressMpa[e] * frac];
@@ -153,9 +153,29 @@ class _AnsysViewport2DState extends State<AnsysViewport2D> {
 
   @override
   Widget build(BuildContext context) {
-    final vals = _fieldValuesPerElem();
-    final minV = vals.reduce(math.min);
-    final maxV = vals.reduce(math.max);
+    final vals = _fieldValuesPerElem(widget.playbackFraction);
+    // Khóa cố định thang đo [minV, maxV] theo trạng thái 100% tải (frac = 1.0)
+    // để khi chạy mô phỏng video tăng tải (0% → 100%), dải màu Gradient trên từng thanh
+    // biến đổi liên tục theo thời gian thực từ xanh dương đậm → lơ → lá → vàng → cam → đỏ!
+    final fullVals = _fieldValuesPerElem(1.0);
+    double minV = fullVals.reduce(math.min);
+    double maxV = fullVals.reduce(math.max);
+    if (widget.field == ContourField.displacement) {
+      minV = 0.0;
+      maxV = 0.0;
+      for (int i = 0; i < widget.model.nNodes; i++) {
+        final uMag = math.sqrt(
+          math.pow(widget.result.uMm[2 * i], 2) +
+              math.pow(widget.result.uMm[2 * i + 1], 2),
+        );
+        if (uMag > maxV) maxV = uMag;
+      }
+    } else if (widget.field == ContourField.strainEnergyDensity) {
+      minV = 0.0;
+    } else {
+      minV = math.min(0.0, minV);
+      maxV = math.max(0.0, maxV);
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -360,8 +380,37 @@ class _Ansys2DPainter extends CustomPainter {
       _drawDashedLine(canvas, a, b, ghostPaint);
     }
 
-    // 3. Các thanh biến dạng tô màu cầu vồng chuẩn ANSYS
     final span = (maxVal - minVal).abs() < 1e-12 ? 1.0 : (maxVal - minVal);
+
+    // Hàm nội suy giá trị trường kết quả liên tục dọc thanh tại tọa độ ξ ∈ [0, 1]
+    double valueAt(int e, double xi) {
+      if (field == ContourField.displacement) {
+        final ni = model.conn[e][0] - 1;
+        final nj = model.conn[e][1] - 1;
+        final ux = (1.0 - xi) * result.uMm[2 * ni] + xi * result.uMm[2 * nj];
+        final uy = (1.0 - xi) * result.uMm[2 * ni + 1] + xi * result.uMm[2 * nj + 1];
+        return math.sqrt(ux * ux + uy * uy) * playbackFraction;
+      }
+      return values[e];
+    }
+
+    ui.Shader? barGradientShader(int e, Offset pA, Offset pB, double xiA, double xiB, double alpha) {
+      if (field != ContourField.displacement) return null;
+      if ((pB - pA).distance < 1e-3) return null;
+      const nStops = 16;
+      final cols = <Color>[];
+      final stops = <double>[];
+      for (int s = 0; s < nStops; s++) {
+        final f = s / (nStops - 1);
+        final xi = xiA + f * (xiB - xiA);
+        final t = ((valueAt(e, xi) - minVal) / span).clamp(0.0, 1.0);
+        cols.add(ansysRainbowColor(t).withValues(alpha: alpha));
+        stops.add(f);
+      }
+      return ui.Gradient.linear(pA, pB, cols, stops);
+    }
+
+    // 3. Các thanh biến dạng tô màu cầu vồng liên tục (Gradient mượt khi xem chuyển vị ||u||)
     for (int e = 0; e < model.nElems; e++) {
       final ni = model.conn[e][0] - 1;
       final nj = model.conn[e][1] - 1;
@@ -373,7 +422,8 @@ class _Ansys2DPainter extends CustomPainter {
         model.coords[nj][0] + deformScale * result.uMm[2 * nj],
         model.coords[nj][1] + deformScale * result.uMm[2 * nj + 1],
       );
-      final tColor = ((values[e] - minVal) / span).clamp(0.0, 1.0);
+      final midVal = valueAt(e, 0.5);
+      final tColor = ((midVal - minVal) / span).clamp(0.0, 1.0);
       final barColor = ansysRainbowColor(tColor);
       final isSel = e == selectedElem;
       final thick = (model.areas[e] > model.baseA * 1.5 ? 11.5 : 7.5) + (isSel ? 2.5 : 0.0);
@@ -393,22 +443,26 @@ class _Ansys2DPainter extends CustomPainter {
       if (surgicalMode && isSel) {
         // Khi ở chế độ Phẫu thuật: nửa sau vết cắt ξ hiện mờ để thấy rõ mặt cắt mổ!
         final cutPt = Offset(a.dx + probeXi * (b.dx - a.dx), a.dy + probeXi * (b.dy - a.dy));
-        canvas.drawLine(
-          a,
-          cutPt,
-          Paint()
+        if (probeXi > 0.01) {
+          final pFront = Paint()
             ..color = barColor
             ..strokeWidth = thick
-            ..strokeCap = StrokeCap.butt,
-        );
-        canvas.drawLine(
-          cutPt,
-          b,
-          Paint()
+            ..strokeCap = StrokeCap.butt;
+          final shFront = barGradientShader(e, a, cutPt, 0.0, probeXi, 1.0);
+          if (shFront != null) pFront.shader = shFront;
+          canvas.drawLine(a, cutPt, pFront);
+        }
+
+        if (probeXi < 0.99) {
+          final pBack = Paint()
             ..color = barColor.withValues(alpha: 0.25)
             ..strokeWidth = thick * 0.75
-            ..strokeCap = StrokeCap.round,
-        );
+            ..strokeCap = StrokeCap.round;
+          final shBack = barGradientShader(e, cutPt, b, probeXi, 1.0, 0.28);
+          if (shBack != null) pBack.shader = shBack;
+          canvas.drawLine(cutPt, b, pBack);
+        }
+
         // Đường dao cắt phẫu thuật vuông góc trục thanh
         final dir = b - a;
         final len = dir.distance;
@@ -423,14 +477,13 @@ class _Ansys2DPainter extends CustomPainter {
           );
         }
       } else {
-        canvas.drawLine(
-          a,
-          b,
-          Paint()
-            ..color = barColor
-            ..strokeWidth = thick
-            ..strokeCap = StrokeCap.round,
-        );
+        final pBar = Paint()
+          ..color = barColor
+          ..strokeWidth = thick
+          ..strokeCap = StrokeCap.round;
+        final sh = barGradientShader(e, a, b, 0.0, 1.0, 1.0);
+        if (sh != null) pBar.shader = sh;
+        canvas.drawLine(a, b, pBar);
       }
 
       // Nhãn giá trị nổi giữa thanh — đồng bộ 100% với trường hiển thị đang chọn
@@ -438,7 +491,7 @@ class _Ansys2DPainter extends CustomPainter {
       _drawBadge(
         canvas,
         mid + Offset(0, e == 0 ? 22 : (e == 2 ? -22 : 0)),
-        'T${e + 1}(${model.memberLabels[e]}): ${field.symbol} = ${field.formatValue(values[e])}',
+        'T${e + 1}(${model.memberLabels[e]}): ${field.symbol} = ${field.formatValue(midVal)}',
         barColor,
       );
     }
@@ -446,22 +499,34 @@ class _Ansys2DPainter extends CustomPainter {
     // 4. Vẽ gối tựa & mũi tên ngoại lực P
     _drawSupportsAndLoads(canvas);
 
-    // 5. Vẽ nút khớp 2D (kèm chuyển vị nút khi đang xem Chuyển vị tổng ||u||)
+    // 5. Vẽ nút khớp 2D (tô màu & ghi chuyển vị nút thật khi đang xem Chuyển vị tổng ||u||)
     for (int i = 0; i < model.nNodes; i++) {
       final p = tf.toScreen(
         model.coords[i][0] + deformScale * result.uMm[2 * i],
         model.coords[i][1] + deformScale * result.uMm[2 * i + 1],
       );
-      canvas.drawCircle(p, 7.5, Paint()..color = darkMode ? const Color(0xFF0F172A) : Colors.white);
+      final uNode = math.sqrt(math.pow(result.uMm[2 * i], 2) + math.pow(result.uMm[2 * i + 1], 2)) * playbackFraction;
+      final nodeAccent = field == ContourField.displacement
+          ? ansysRainbowColor(((uNode - minVal) / span).clamp(0.0, 1.0))
+          : const Color(0xFF38BDF8);
       canvas.drawCircle(
         p,
         7.5,
         Paint()
-          ..color = const Color(0xFF38BDF8)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.4,
+          ..color = field == ContourField.displacement
+              ? nodeAccent
+              : (darkMode ? const Color(0xFF0F172A) : Colors.white),
       );
-      final uNode = math.sqrt(math.pow(result.uMm[2 * i], 2) + math.pow(result.uMm[2 * i + 1], 2)) * playbackFraction;
+      canvas.drawCircle(
+        p,
+        7.5,
+        Paint()
+          ..color = field == ContourField.displacement
+              ? (darkMode ? Colors.white : const Color(0xFF0F172A))
+              : nodeAccent
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.2,
+      );
       final nodeLabel = field == ContourField.displacement
           ? 'N${i + 1} (${uNode.toStringAsFixed(3)} mm)'
           : 'N${i + 1}';
