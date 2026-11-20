@@ -110,7 +110,7 @@ def export_quick_docx_report(
     p_meta = doc.add_paragraph()
     p_meta.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_meta.add_run(
-        f"Học viên: {author_name}  |  GVHD: PGS.TS. Ngô Hữu Cường  |  Liên hệ: vothanhvang@gmail.com\n"
+        f"Giảng viên hướng dẫn: PGS. TS Ngô Hữu Cường  |  Học viên: {author_name}  |  Liên hệ: vothanhvang@gmail.com\n"
         f"Thời gian xuất báo cáo: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
     ).italic = True
 
@@ -303,7 +303,7 @@ def export_quick_pdf_report(
         Paragraph("TRƯỜNG ĐẠI HỌC BÁCH KHOA – ĐHQG TP. HỒ CHÍ MINH", s_sub),
         Paragraph("BÁO CÁO KẾT QUẢ PHÂN TÍCH PHI TUYẾN HÌNH HỌC HỆ DÀN (CALFEM)", s_title),
         Paragraph(
-            f"Học viên: {author_name} | GVHD: PGS.TS. Ngô Hữu Cường | Liên hệ: vothanhvang@gmail.com | "
+            f"Giảng viên hướng dẫn: PGS. TS Ngô Hữu Cường | Học viên: {author_name} | Liên hệ: vothanhvang@gmail.com | "
             f"Ngày xuất: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}",
             s_sub,
         ),

@@ -274,28 +274,39 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
             appBar: AppBar(
               backgroundColor: barBg,
               elevation: 0,
-              toolbarHeight: 54,
+              toolbarHeight: 62,
               title: Row(
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: Image.asset('assets/python_logo.png', width: 34, height: 34, fit: BoxFit.cover),
+                    child: Image.asset('assets/python_logo.png', width: 38, height: 38, fit: BoxFit.cover),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         const Text(
                           'CALFEM Python Studio — Phân tích Phi tuyến Hình học 2D/3D',
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
+                          style: TextStyle(fontSize: 13.2, fontWeight: FontWeight.bold),
                         ),
+                        const SizedBox(height: 1),
                         Text(
-                          'ĐH Bách Khoa TP.HCM • Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624) • Liên hệ: vothanhvang@gmail.com',
+                          'ĐH Bách Khoa TP.HCM • Giảng viên hướng dẫn: PGS. TS Ngô Hữu Cường',
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 10,
+                            fontSize: 10.2,
+                            fontWeight: FontWeight.w600,
+                            color: _darkMode ? const Color(0xFFFBBF24) : const Color(0xFF0F3D6E),
+                          ),
+                        ),
+                        Text(
+                          'Học viên: Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624) • Liên hệ: vothanhvang@gmail.com',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 9.8,
                             color: _pythonOnline ? const Color(0xFF10B981) : const Color(0xFF38BDF8),
                           ),
                         ),
@@ -615,7 +626,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
             const SizedBox(height: 8),
             const Text('• Đơn vị: Trường ĐH Bách Khoa – ĐHQG TP.HCM\n'
                 '• Học phần: Phân tích Phi tuyến Kết cấu\n'
-                '• GVHD: PGS.TS. Ngô Hữu Cường\n'
+                '• Giảng viên hướng dẫn: PGS. TS Ngô Hữu Cường\n'
                 '• Học viên thực hiện:\n'
                 '    - Lâm Phúc Tâm (MSHV: 2670621)\n'
                 '    - Võ Thanh Vang (MSHV: 2670624)',

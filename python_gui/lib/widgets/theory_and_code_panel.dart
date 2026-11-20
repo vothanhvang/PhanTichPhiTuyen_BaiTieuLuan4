@@ -343,7 +343,7 @@ def bar2g_corotational(ex0, ey0, ep, ed):
             children: [
               Text(
                 '• Trường Đại học Bách Khoa – ĐHQG TP. Hồ Chí Minh (Khoa Kỹ thuật Xây dựng)\n'
-                '• Giảng viên hướng dẫn: PGS.TS. Ngô Hữu Cường\n'
+                '• Giảng viên hướng dẫn: PGS. TS Ngô Hữu Cường\n'
                 '• Học viên thực hiện: Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624)',
                 style: bodyStyle(),
               ),
