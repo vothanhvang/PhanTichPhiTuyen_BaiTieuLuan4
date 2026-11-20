@@ -12,6 +12,7 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../core/calfem_engine.dart';
 import '../core/report_generator.dart';
 import '../core/python_bridge_stub.dart'
@@ -56,7 +57,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
   double _probeXi = 0.5;
   double _etaNorm = 0.0;
   double _zetaNorm = 0.0;
-  double _imperfectionRatio = 0.001; // L/1000 để thấy rõ phân bố thớ khi mở bảng Phẫu thuật
+  double _imperfectionRatio = 0.002; // L/500 (chuẩn Eurocode 3) để thấy rõ độ nhạy P-δ khi kéo lát cắt ξ
 
   // Tab chọn trên màn hình rộng (bảng phải) & màn hình hẹp (bottom nav)
   int _rightTab = 0;
@@ -282,7 +283,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                           style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
                         ),
                         Text(
-                          'ĐH Bách Khoa TP.HCM • Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624) • ${_resActive.engineSource}',
+                          'ĐH Bách Khoa TP.HCM • Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624) • Liên hệ: vothanhvang@gmail.com',
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 10,
@@ -312,6 +313,11 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                     onPressed: () => _exportReport(true),
                   ),
                 ],
+                IconButton(
+                  tooltip: 'Thông tin nhóm & Liên hệ (vothanhvang@gmail.com)',
+                  icon: const Icon(Icons.contact_mail_outlined, color: Color(0xFF38BDF8)),
+                  onPressed: _showContactDialog,
+                ),
                 IconButton(
                   tooltip: _darkMode ? 'Chế độ sáng' : 'Chế độ tối ANSYS',
                   icon: Icon(_darkMode ? Icons.light_mode : Icons.dark_mode),
@@ -363,7 +369,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
       children: [
         // CỘT TRÁI: Cây tham số & bộ giải
         SizedBox(
-          width: 300,
+          width: 318,
           child: Container(
             decoration: BoxDecoration(border: Border(right: BorderSide(color: border))),
             child: _buildControlPanel(),
@@ -551,33 +557,134 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
     );
   }
 
+  void _showContactDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _darkMode ? const Color(0xFF0F172A) : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: Color(0xFF06B6D4), width: 1.2),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.contact_mail, color: Color(0xFF38BDF8), size: 22),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Thông tin Phần mềm & Liên hệ',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'CALFEM Nonlinear Studio — Phân tích Phi tuyến Hình học 2D/3D',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Color(0xFF38BDF8)),
+            ),
+            const SizedBox(height: 8),
+            const Text('• Đơn vị: Trường ĐH Bách Khoa – ĐHQG TP.HCM\n'
+                '• Học phần: Phân tích Phi tuyến Kết cấu\n'
+                '• GVHD: PGS.TS. Ngô Hữu Cường\n'
+                '• Học viên thực hiện:\n'
+                '    - Lâm Phúc Tâm (MSHV: 2670621)\n'
+                '    - Võ Thanh Vang (MSHV: 2670624)',
+                style: TextStyle(fontSize: 12, height: 1.5)),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: _darkMode ? const Color(0xFF0A1426) : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF06B6D4).withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.email_outlined, size: 18, color: Color(0xFF10B981)),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: SelectableText(
+                      'vothanhvang@gmail.com',
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () {
+                      Clipboard.setData(const ClipboardData(text: 'vothanhvang@gmail.com'));
+                      Navigator.of(ctx).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          backgroundColor: Color(0xFF0F766E),
+                          duration: Duration(seconds: 2),
+                          content: Text('Đã sao chép email liên hệ: vothanhvang@gmail.com'),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.copy, size: 14),
+                    label: const Text('Sao chép', style: TextStyle(fontSize: 11)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            SelectableText(
+              '• Lõi tính toán: ${_resActive.engineSource}\n'
+              '• GitHub: https://github.com/vothanhvang/PhanTichPhiTuyen_BaiTieuLuan4',
+              style: TextStyle(fontSize: 10.8, color: _darkMode ? const Color(0xFF94A3B8) : const Color(0xFF475569)),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Đóng'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _resetDefaults() {
+    FocusScope.of(context).unfocus();
+    _animTimer?.cancel();
+    _animTimer = null;
+    _updateAndSolve(() {
+      _preset = TrussPreset.assignment5Bar;
+      _method = SolverMethod.corotationalNR;
+      _sectionShape = SectionShape.iSection;
+      _contourField = ContourField.axialStress;
+      _lMm = 1000.0;
+      _eGpa = 200.0;
+      _aMm2 = 2001.0;
+      _pKn = 208.0;
+      _loadFactor = 1.0;
+      _nSteps = 10;
+      _deformScale = 180.0;
+      _playbackFrac = 1.0;
+      _selectedElem = 3;
+      _probeXi = 0.5;
+      _etaNorm = 0.0;
+      _zetaNorm = 0.0;
+      _imperfectionRatio = 0.002;
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Color(0xFF0F3D6E),
+          duration: Duration(seconds: 2),
+          content: Text('Đã Reset toàn bộ thông số về đề bài mặc định (L=1000 mm, E=200 GPa, A=2001 mm², P=208 kN, λ=1, n=10).'),
+        ),
+      );
+    }
+  }
+
   Widget _buildControlPanel() {
     final cardBg = _darkMode ? const Color(0xFF111B2E) : Colors.white;
     final border = _darkMode ? const Color(0xFF1E293B) : const Color(0xFFCBD5E1);
-
-    Widget numSlider(String label, double val, double min, double max, String unit, ValueChanged<double> onChg) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(label, style: const TextStyle(fontSize: 11)),
-              Text(
-                '${val.toStringAsFixed(val >= 100 ? 0 : 1)} $unit',
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF38BDF8)),
-              ),
-            ],
-          ),
-          Slider(
-            value: val.clamp(min, max),
-            min: min,
-            max: max,
-            onChanged: onChg,
-          ),
-        ],
-      );
-    }
 
     // So sánh nhanh chuyển vị cực đại Tuyến tính vs Phi tuyến
     final u2yLin = _model.nDofs >= 4 ? _resLinear.uMm[3] : 0.0;
@@ -648,7 +755,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
         ),
         const SizedBox(height: 10),
 
-        // Card 2: Thông số hình học, vật liệu & mức tải
+        // Card 2: Thông số hình học, vật liệu & mức tải (Nhập số trực tiếp + Thanh trượt + Reset)
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: border)),
@@ -662,40 +769,116 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                     child: Text('2. Thông số Vật liệu & Tải trọng',
                         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.3, color: Color(0xFF38BDF8))),
                   ),
-                  TextButton(
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  Tooltip(
+                    message: 'Đặt lại toàn bộ thông số về đề bài gốc',
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF38BDF8),
+                        side: BorderSide(color: const Color(0xFF38BDF8).withValues(alpha: 0.6)),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      ),
+                      onPressed: _resetDefaults,
+                      icon: const Icon(Icons.restart_alt, size: 13),
+                      label: const Text('Reset', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600)),
                     ),
-                    onPressed: () => _updateAndSolve(() {
-                      _preset = TrussPreset.assignment5Bar;
-                      _lMm = 1000.0;
-                      _eGpa = 200.0;
-                      _aMm2 = 2001.0;
-                      _pKn = 208.0;
-                      _loadFactor = 1.0;
-                      _nSteps = 10;
-                      _deformScale = 180.0;
-                    }),
-                    child: const Text('Mặc định', style: TextStyle(fontSize: 10.5)),
                   ),
                 ],
               ),
-              numSlider('Chiều dài cơ sở L', _lMm, 500, 3000, 'mm', (v) => _updateAndSolve(() => _lMm = v)),
-              numSlider('Mô-đun đàn hồi E', _eGpa, 50, 400, 'GPa', (v) => _updateAndSolve(() => _eGpa = v)),
-              numSlider('Diện tích cơ sở A', _aMm2, 500, 5000, 'mm²', (v) => _updateAndSolve(() => _aMm2 = v)),
-              numSlider('Tải trọng tham chiếu P', _pKn, -600, 600, 'kN', (v) => _updateAndSolve(() => _pKn = v)),
-              numSlider('Hệ số nhân tải λ (thử tải lớn!)', _loadFactor, -200, 300, '×P', (v) {
-                _updateAndSolve(() {
-                  _loadFactor = v.abs() < 0.5 ? 1.0 : v;
-                  if (_loadFactor.abs() > 20) {
-                    _deformScale = 1.5;
-                  }
-                });
-              }),
-              numSlider('Số bước tăng tải n_steps', _nSteps.toDouble(), 1, 30, 'bước',
-                  (v) => _updateAndSolve(() => _nSteps = v.round())),
+              const SizedBox(height: 6),
+              _EditableParamSlider(
+                label: 'Chiều dài cơ sở L',
+                value: _lMm,
+                min: 500,
+                max: 3000,
+                hardMin: 10,
+                hardMax: 100000,
+                unit: 'mm',
+                darkMode: _darkMode,
+                onChanged: (v) => _updateAndSolve(() => _lMm = v),
+              ),
+              _EditableParamSlider(
+                label: 'Mô-đun đàn hồi E',
+                value: _eGpa,
+                min: 50,
+                max: 400,
+                hardMin: 1,
+                hardMax: 10000,
+                unit: 'GPa',
+                darkMode: _darkMode,
+                onChanged: (v) => _updateAndSolve(() => _eGpa = v),
+              ),
+              _EditableParamSlider(
+                label: 'Diện tích cơ sở A',
+                value: _aMm2,
+                min: 500,
+                max: 5000,
+                hardMin: 1,
+                hardMax: 500000,
+                unit: 'mm²',
+                darkMode: _darkMode,
+                onChanged: (v) => _updateAndSolve(() => _aMm2 = v),
+              ),
+              _EditableParamSlider(
+                label: 'Tải trọng tham chiếu P',
+                value: _pKn,
+                min: -600,
+                max: 600,
+                hardMin: -100000,
+                hardMax: 100000,
+                allowNegative: true,
+                unit: 'kN',
+                darkMode: _darkMode,
+                onChanged: (v) => _updateAndSolve(() => _pKn = v),
+              ),
+              _EditableParamSlider(
+                label: 'Hệ số nhân tải λ',
+                value: _loadFactor,
+                min: -200,
+                max: 300,
+                hardMin: -1000,
+                hardMax: 1000,
+                allowNegative: true,
+                unit: '×P',
+                darkMode: _darkMode,
+                onChanged: (v) {
+                  _updateAndSolve(() {
+                    _loadFactor = v.abs() < 1e-4 ? 1.0 : v;
+                    if (_loadFactor.abs() > 20) {
+                      _deformScale = 1.5;
+                    }
+                  });
+                },
+              ),
+              _EditableParamSlider(
+                label: 'Số bước tăng tải n',
+                value: _nSteps.toDouble(),
+                min: 1,
+                max: 30,
+                hardMin: 1,
+                hardMax: 200,
+                isInt: true,
+                unit: 'bước',
+                darkMode: _darkMode,
+                onChanged: (v) => _updateAndSolve(() => _nSteps = v.round().clamp(1, 200)),
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _resetDefaults,
+                  icon: const Icon(Icons.settings_backup_restore, size: 15),
+                  label: const Text('Reset thông số về mặc định', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _darkMode ? const Color(0xFF94A3B8) : const Color(0xFF334155),
+                    side: BorderSide(color: border),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -786,5 +969,197 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
       );
     }
     return TheoryAndCodePanel(darkMode: _darkMode);
+  }
+}
+
+/// Ô nhập thông số kết hợp Thanh trượt (Dual Numeric TextField + Slider)
+/// Cho phép gõ trực tiếp giá trị chính xác (Enter hoặc rời ô để áp dụng)
+/// đồng bộ hai chiều tức thời với Slider và nút Reset mặc định.
+class _EditableParamSlider extends StatefulWidget {
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final double hardMin;
+  final double hardMax;
+  final String unit;
+  final bool isInt;
+  final bool allowNegative;
+  final bool darkMode;
+  final ValueChanged<double> onChanged;
+
+  const _EditableParamSlider({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.hardMin,
+    required this.hardMax,
+    required this.unit,
+    required this.darkMode,
+    required this.onChanged,
+    this.isInt = false,
+    this.allowNegative = false,
+  });
+
+  @override
+  State<_EditableParamSlider> createState() => _EditableParamSliderState();
+}
+
+class _EditableParamSliderState extends State<_EditableParamSlider> {
+  late TextEditingController _ctrl;
+  late FocusNode _focus;
+
+  String _fmt(double v) {
+    if (widget.isInt) return v.round().toString();
+    if ((v - v.roundToDouble()).abs() < 1e-6) {
+      return v.round().toString();
+    }
+    var s = v.toStringAsFixed(3);
+    s = s.replaceFirst(RegExp(r'0+$'), '');
+    if (s.endsWith('.')) s = s.substring(0, s.length - 1);
+    return s;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: _fmt(widget.value));
+    _focus = FocusNode();
+    _focus.addListener(() {
+      if (_focus.hasFocus) {
+        _ctrl.selection = TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+      } else {
+        _commitText();
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _EditableParamSlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_focus.hasFocus && (oldWidget.value - widget.value).abs() > 1e-9) {
+      _ctrl.text = _fmt(widget.value);
+    }
+  }
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _commitText() {
+    final raw = _ctrl.text.trim().replaceAll(',', '.');
+    final parsed = double.tryParse(raw);
+    if (parsed == null || !parsed.isFinite) {
+      _ctrl.text = _fmt(widget.value);
+      return;
+    }
+    final clamped = parsed.clamp(widget.hardMin, widget.hardMax).toDouble();
+    final finalVal = widget.isInt ? clamped.roundToDouble() : clamped;
+    _ctrl.text = _fmt(finalVal);
+    if ((finalVal - widget.value).abs() > 1e-9) {
+      widget.onChanged(finalVal);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fill = widget.darkMode ? const Color(0xFF0A1324) : const Color(0xFFF8FAFC);
+    final bdr = widget.darkMode ? const Color(0xFF334155) : const Color(0xFFCBD5E1);
+    final allowedRegex = widget.isInt
+        ? RegExp(r'[0-9]')
+        : (widget.allowNegative ? RegExp(r'[0-9\.\,\-]') : RegExp(r'[0-9\.\,]'));
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.label,
+                  style: const TextStyle(fontSize: 11),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              SizedBox(
+                width: 74,
+                height: 26,
+                child: TextField(
+                  controller: _ctrl,
+                  focusNode: _focus,
+                  textAlign: TextAlign.right,
+                  keyboardType: TextInputType.numberWithOptions(
+                    signed: widget.allowNegative,
+                    decimal: !widget.isInt,
+                  ),
+                  inputFormatters: [FilteringTextInputFormatter.allow(allowedRegex)],
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF38BDF8),
+                    fontFamily: 'DejaVuSansMono',
+                  ),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    filled: true,
+                    fillColor: fill,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(5),
+                      borderSide: BorderSide(color: bdr),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(5),
+                      borderSide: const BorderSide(color: Color(0xFF06B6D4), width: 1.4),
+                    ),
+                  ),
+                  onSubmitted: (_) => _commitText(),
+                  onTapOutside: (_) {
+                    if (_focus.hasFocus) {
+                      _focus.unfocus();
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 5),
+              SizedBox(
+                width: 34,
+                child: Text(
+                  widget.unit,
+                  style: TextStyle(
+                    fontSize: 10.2,
+                    fontWeight: FontWeight.w600,
+                    color: widget.darkMode ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 3.0,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7.5),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 13.0),
+            ),
+            child: Slider(
+              value: widget.value.clamp(widget.min, widget.max),
+              min: widget.min,
+              max: widget.max,
+              onChanged: (v) {
+                final next = widget.isInt ? v.roundToDouble() : double.parse(v.toStringAsFixed(v.abs() >= 100 ? 0 : 1));
+                _ctrl.text = _fmt(next);
+                widget.onChanged(next);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

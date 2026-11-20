@@ -57,15 +57,31 @@ enum TrussPreset {
 
 /// Trường kết quả hiển thị bản đồ màu kiểu ANSYS
 enum ContourField {
-  axialStress('Ứng suất pháp σ (MPa)', 'MPa'),
-  axialStrain('Biến dạng dọc ε (με)', 'με'),
-  axialForce('Lực dọc trục N (kN)', 'kN'),
-  displacement('Chuyển vị tổng ||u|| (mm)', 'mm'),
-  strainEnergyDensity('Mật độ năng lượng u₀ (kJ/m³)', 'kJ/m³');
+  axialStress('Ứng suất pháp σ (MPa)', 'MPa', 'σ'),
+  axialStrain('Biến dạng dọc ε (με)', 'με', 'ε'),
+  axialForce('Lực dọc trục N (kN)', 'kN', 'N'),
+  displacement('Chuyển vị tổng ||u|| (mm)', 'mm', '||u||'),
+  strainEnergyDensity('Mật độ năng lượng u₀ (kJ/m³)', 'kJ/m³', 'u₀');
 
   final String label;
   final String unit;
-  const ContourField(this.label, this.unit);
+  final String symbol;
+  const ContourField(this.label, this.unit, this.symbol);
+
+  String formatValue(double v) {
+    switch (this) {
+      case ContourField.axialStress:
+        return '${v.toStringAsFixed(2)} $unit';
+      case ContourField.axialStrain:
+        return '${v.toStringAsFixed(2)} $unit';
+      case ContourField.axialForce:
+        return '${v.abs() < 1.0 ? v.toStringAsFixed(4) : v.toStringAsFixed(2)} $unit';
+      case ContourField.displacement:
+        return '${v.toStringAsFixed(4)} $unit';
+      case ContourField.strainEnergyDensity:
+        return '${v.toStringAsFixed(3)} $unit';
+    }
+  }
 }
 
 /// Kích thước hình học mặt cắt ngang 3D quy đổi từ diện tích A (mm²)

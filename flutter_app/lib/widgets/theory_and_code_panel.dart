@@ -1,8 +1,8 @@
 // ============================================================================
 // BẢNG TRA CỨU LÝ THUYẾT, CÔNG THỨC CẤP 3 & MÃ NGUỒN PYTHON / DART
 // ============================================================================
-// Giúp thầy hướng dẫn và các bạn trong lớp xem ngay công thức, dẫn nguồn số
-// trang tài liệu và đoạn mã lõi có chú thích tiếng Việt ngay trong phần mềm!
+// Hiển thị công thức toán học chuẩn sách giáo khoa: dấu căn bậc hai ĐẦY ĐỦ
+// có gạch ngang phủ trọn biểu thức bên trong (vinculum) và phân số xếp tầng!
 // ============================================================================
 
 import 'package:flutter/material.dart';
@@ -16,8 +16,35 @@ class TheoryAndCodePanel extends StatelessWidget {
     final cardBg = darkMode ? const Color(0xFF111B2E) : Colors.white;
     final border = darkMode ? const Color(0xFF1E293B) : const Color(0xFFCBD5E1);
     final codeBg = darkMode ? const Color(0xFF070D19) : const Color(0xFFF8FAFC);
+    final textColor = darkMode ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B);
+    final mathColor = darkMode ? const Color(0xFF7DD3FC) : const Color(0xFF0F3D6E);
+    final formulaBg = darkMode ? const Color(0xFF0A1426) : const Color(0xFFF1F5F9);
 
-    Widget sectionCard(String title, String body, {String? code}) {
+    TextStyle bodyStyle() => TextStyle(fontSize: 11, height: 1.48, color: textColor);
+    TextStyle mathStyle({bool bold = false}) => TextStyle(
+          fontSize: 11.5,
+          fontWeight: bold ? FontWeight.bold : FontWeight.w600,
+          color: mathColor,
+          height: 1.2,
+        );
+
+    Widget formulaBox(Widget formulaWidget) {
+      return Container(
+        margin: const EdgeInsets.only(top: 4, bottom: 8, left: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: formulaBg,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: mathColor.withValues(alpha: 0.25)),
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: formulaWidget,
+        ),
+      );
+    }
+
+    Widget cardWrapper(String title, Widget content) {
       return Container(
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(12),
@@ -32,15 +59,181 @@ class TheoryAndCodePanel extends StatelessWidget {
             Text(title,
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF38BDF8))),
             const SizedBox(height: 6),
-            Text(
-              body,
-              style: TextStyle(
-                fontSize: 11,
-                height: 1.48,
-                color: darkMode ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B),
+            content,
+          ],
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        // MỤC 1: TOÁN PHỔ THÔNG CẤP 3 VỚI DẤU CĂN ĐẦY ĐỦ & PHÂN SỐ CHUẨN SÁCH GIÁO KHOA
+        cardWrapper(
+          '1. Tóm tắt Kiến thức Toán Phổ thông Cấp 3 dùng trong Bài toán',
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('• Định lý Py-ta-go (Lớp 7): Chiều dài thực thanh biến dạng:', style: bodyStyle()),
+              formulaBox(
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text('l = ', style: mathStyle(bold: true)),
+                    _MathSqrt(
+                      color: mathColor,
+                      child: Text('(Δx₀ + Δuₓ)² + (Δy₀ + Δuᵧ)²', style: mathStyle()),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            if (code != null) ...[
+              Text('• Hằng đẳng thức hiệu hai bình phương (Lớp 8) — khử sai số làm tròn máy tính:', style: bodyStyle()),
+              formulaBox(
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text('l − L₀ = ', style: mathStyle(bold: true)),
+                    _MathFrac(
+                      numerator: Text('l² − L₀²', style: mathStyle()),
+                      denominator: Text('l + L₀', style: mathStyle()),
+                      color: mathColor,
+                    ),
+                  ],
+                ),
+              ),
+              Text('• Khai triển nhị thức Newton (Lớp 11) → suy ra biến dạng hữu hạn Green-Lagrange:', style: bodyStyle()),
+              formulaBox(
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    _MathSqrt(
+                      color: mathColor,
+                      child: Text('1 + d', style: mathStyle()),
+                    ),
+                    Text('  ≈  1 + ', style: mathStyle(bold: true)),
+                    _MathFrac(
+                      numerator: Text('d', style: mathStyle()),
+                      denominator: Text('2', style: mathStyle()),
+                      color: mathColor,
+                    ),
+                  ],
+                ),
+              ),
+              Text('• Phương pháp tiếp tuyến Newton-Raphson (Lớp 11–12) giải hệ phi tuyến:', style: bodyStyle()),
+              formulaBox(
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text('u_mới = u_cũ + ', style: mathStyle(bold: true)),
+                    _MathFrac(
+                      numerator: Text('R(u_cũ)', style: mathStyle()),
+                      denominator: Text('K_t(u_cũ)', style: mathStyle()),
+                      color: mathColor,
+                    ),
+                  ],
+                ),
+              ),
+              Text('• Quy tắc đòn bẩy / Mô-men lực (Vật lý 10) — giải thích vì sao R₁ᵧ ≠ R₄ᵧ:', style: bodyStyle()),
+              formulaBox(
+                Text('R₄ᵧ · (2L + u₄ₓ) = −P · (L + u₂ₓ)', style: mathStyle(bold: true)),
+              ),
+            ],
+          ),
+        ),
+
+        // MỤC 2: BA CẤP ĐỘ PHÂN TÍCH PHI TUYẾN HÌNH HỌC
+        cardWrapper(
+          '2. Ba cấp độ Phân tích Phi tuyến Hình học (Dẫn nguồn Giáo trình)',
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '• Cấp 1 – Tuyến tính Bậc 1 (CALFEM bar2e – calfem34.pdf tr. 5.3-2 / PDF tr. 60): cân bằng trên hình dạng chưa biến dạng.\n'
+                '• Cấp 2 – Bậc 2 CALFEM gốc (bar2g – Dahlblom 2016 PT 9.35–9.38 tr. 259 / PDF tr. 273): cộng ma trận độ cứng hình học ngang (N/L)·K_eσ, lặp cập nhật lực dọc N.\n'
+                '• Cấp 3a – Đồng chuyển động Corotational UL (Jeffers 2026 Mục 8.3 tr. 186; Yang 2025 Chương 4 tr. 119): đánh giá bar2g tại tọa độ biến dạng hiện tại x = X + u:',
+                style: bodyStyle(),
+              ),
+              formulaBox(
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text('ε_eng = ', style: mathStyle(bold: true)),
+                    _MathFrac(
+                      numerator: Text('l − L₀', style: mathStyle()),
+                      denominator: Text('L₀', style: mathStyle()),
+                      color: mathColor,
+                    ),
+                    Text('   ;   K_t = ', style: mathStyle(bold: true)),
+                    _MathFrac(
+                      numerator: Text('EA', style: mathStyle()),
+                      denominator: Text('L₀', style: mathStyle()),
+                      color: mathColor,
+                    ),
+                    Text('(n·nᵀ) + ', style: mathStyle()),
+                    _MathFrac(
+                      numerator: Text('N', style: mathStyle()),
+                      denominator: Text('l', style: mathStyle()),
+                      color: mathColor,
+                    ),
+                    Text('(I − n·nᵀ)', style: mathStyle()),
+                  ],
+                ),
+              ),
+              Text(
+                '• Cấp 3b – Total Lagrangian (Bài giảng NSA_4 Slides 6–12 / PDF tr. 2–3; McGuire 2000 PT 9.1–9.9 tr. 243–245): dùng biến dạng Green-Lagrange:',
+                style: bodyStyle(),
+              ),
+              formulaBox(
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text('ε_GL = ', style: mathStyle(bold: true)),
+                    _MathFrac(
+                      numerator: Text('l² − L₀²', style: mathStyle()),
+                      denominator: Text('2L₀²', style: mathStyle()),
+                      color: mathColor,
+                    ),
+                    Text('   ;   [k_g] = ', style: mathStyle(bold: true)),
+                    _MathFrac(
+                      numerator: Text('F_x2', style: mathStyle()),
+                      denominator: Text('L₀', style: mathStyle()),
+                      color: mathColor,
+                    ),
+                    Text('·[[I, −I], [−I, I]]', style: mathStyle()),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // MỤC 3: BẢN CHẤT VẬT LÝ
+        cardWrapper(
+          '3. Bản chất Vật lý Đáng chú ý của Hệ Dàn 5 thanh Đề bài',
+          Text(
+            '• Thanh 1–2 "hồi sinh": Trong tuyến tính N₁₂ = 0 (thanh không lực), nhưng trong phi tuyến hình học khi Nút 2 dịch chuyển lên trên, theo định lý Py-ta-go thanh 1–2 bị kéo giãn và phát sinh lực kéo N₁₂ = +13.55 N (tại 1P) → +180.4 kN (tại 100P)!\n'
+            '• Bất đối xứng Mềm hóa vs Cứng hóa: Lực +P hướng lên làm 2 thanh chéo bị NÉN và dẹt dần → kết cấu MỀM đi (u₂ᵧ tăng +0.072% tại 1P, +27.8% tại 250P) và bật nhảy Snap-Through tại P_lim = 78.45 MN! Ngược lại nếu đảo chiều −P hướng xuống, 2 thanh chéo chịu KÉO → kết cấu CỨNG lên!\n'
+            '• Bất đối xứng phản lực gối: Vì gối con lăn Nút 4 trượt sang phải (u₄ₓ > 0), nhịp giữa 2 gối mở rộng thành 2L + u₄ₓ làm |R₁ᵧ| = 104.020 kN > |R₄ᵧ| = 103.980 kN!',
+            style: bodyStyle(),
+          ),
+        ),
+
+        // MỤC 4: MÃ LÕI PYTHON CALFEM
+        cardWrapper(
+          '4. Trích đoạn Mã Lõi Python CALFEM (python_core/calfem_elements.py)',
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Cấu trúc mô-đun rõ ràng, giữ nguyên quy ước hàm CALFEM 3.4 và chú thích tiếng Việt đầy đủ:',
+                style: bodyStyle(),
+              ),
               const SizedBox(height: 8),
               Container(
                 width: double.infinity,
@@ -51,49 +244,7 @@ class TheoryAndCodePanel extends StatelessWidget {
                   border: Border.all(color: border),
                 ),
                 child: SelectableText(
-                  code,
-                  style: TextStyle(
-                    fontFamily: 'DejaVuSansMono',
-                    fontSize: 9.8,
-                    height: 1.4,
-                    color: darkMode ? const Color(0xFFA5F3FC) : const Color(0xFF0F3D6E),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      );
-    }
-
-    return ListView(
-      padding: const EdgeInsets.all(12),
-      children: [
-        sectionCard(
-          '1. Tóm tắt Kiến thức Toán Phổ thông Cấp 3 dùng trong Bài toán',
-          '• Định lý Py-ta-go (Lớp 7): Chiều dài thực thanh biến dạng l = √[(Δx₀ + Δuₓ)² + (Δy₀ + Δuᵧ)²].\n'
-          '• Hằng đẳng thức hiệu hai bình phương (Lớp 8): l − L₀ = (l² − L₀²)/(l + L₀) giúp khử sai số làm tròn máy tính!\n'
-          '• Khai triển nhị thức Newton (Lớp 11): √(1 + d) ≈ 1 + d/2 → suy ra biến dạng hữu hạn Green-Lagrange.\n'
-          '• Phương pháp tiếp tuyến Newton-Raphson (Lớp 11-12): u_mới = u_cũ + R(u_cũ) / K_t(u_cũ) để giải hệ phi tuyến.\n'
-          '• Quy tắc đòn bẩy / Mô-men lực (Vật lý 10): R₄ᵧ·(2L + u₄ₓ) = −P·(L + u₂ₓ) giải thích vì sao R₁ᵧ ≠ R₄ᵧ!',
-        ),
-        sectionCard(
-          '2. Ba cấp độ Phân tích Phi tuyến Hình học (Dẫn nguồn Giáo trình)',
-          '• Cấp 1 – Tuyến tính Bậc 1 (CALFEM bar2e – calfem34.pdf tr. 5.3-2 / PDF tr. 60): cân bằng trên hình dạng chưa biến dạng.\n'
-          '• Cấp 2 – Bậc 2 CALFEM gốc (bar2g – Dahlblom 2016 PT 9.35–9.38 tr. 259 / PDF tr. 273): cộng ma trận độ cứng hình học ngang (N/L)·K_eσ, lặp cập nhật lực dọc N.\n'
-          '• Cấp 3a – Đồng chuyển động Corotational UL (Jeffers 2026 Mục 8.3 tr. 186; Yang 2025 Chương 4 tr. 119): đánh giá bar2g tại tọa độ biến dạng hiện tại x = X + u với biến dạng kỹ thuật ε = (l − L₀)/L₀.\n'
-          '• Cấp 3b – Total Lagrangian (Bài giảng NSA_4 Slides 6–12 / PDF tr. 2–3; McGuire 2000 PT 9.1–9.9 tr. 243–245): dùng biến dạng Green-Lagrange ε_GL = (l² − L₀²)/(2L₀²) và [k_g] = (F_x2/L₀)·[[I, -I], [-I, I]].',
-        ),
-        sectionCard(
-          '3. Bản chất Vật lý Đáng chú ý của Hệ Dàn 5 thanh Đề bài',
-          '• Thanh 1–2 "hồi sinh": Trong tuyến tính N₁₂ = 0 (thanh không lực), nhưng trong phi tuyến hình học khi Nút 2 dịch chuyển lên trên, theo định lý Py-ta-go thanh 1–2 bị kéo giãn và phát sinh lực kéo N₁₂ = +13.55 N (tại 1P) → +180.4 kN (tại 100P)!\n'
-          '• Bất đối xứng Mềm hóa vs Cứng hóa: Lực +P hướng lên làm 2 thanh chéo bị NÉN và dẹt dần → kết cấu MỀM đi (u₂ᵧ tăng +0.072% tại 1P, +27.8% tại 250P) và bật nhảy Snap-Through tại P_lim = 78.45 MN! Ngược lại nếu đảo chiều −P hướng xuống, 2 thanh chéo chịu KÉO → kết cấu CỨNG lên!\n'
-          '• Bất đối xứng phản lực gối: Vì gối con lăn Nút 4 trượt sang phải (u₄ₓ > 0), nhịp giữa 2 gối mở rộng thành 2L + u₄ₓ làm |R₁ᵧ| = 104.020 kN > |R₄ᵧ| = 103.980 kN!',
-        ),
-        sectionCard(
-          '4. Trích đoạn Mã Lõi Python CALFEM (`python_core/calfem_elements.py`)',
-          'Cấu trúc mô-đun rõ ràng, giữ nguyên quy ước hàm CALFEM 3.4 và chú thích tiếng Việt đầy đủ:',
-          code: '''def bar2g(ex, ey, ep, N):
+                  '''def bar2g(ex, ey, ep, N):
     """Ma trận độ cứng thanh dàn 2D phi tuyến hình học chuẩn CALFEM 3.4"""
     E, A = float(ep[0]), float(ep[1])
     dx, dy = ex[1] - ex[0], ey[1] - ey[0]
@@ -119,8 +270,142 @@ def bar2g_corotational(ex0, ey0, ep, ed):
     k2 = (ep[0]*ep[1]/L0)*np.outer(n, n) + (N/l_cur)*(np.eye(2) - np.outer(n, n))
     Kt = np.block([[k2, -k2], [-k2, k2]])
     return f_int, Kt, N''',
+                  style: TextStyle(
+                    fontFamily: 'DejaVuSansMono',
+                    fontSize: 9.8,
+                    height: 1.4,
+                    color: darkMode ? const Color(0xFFA5F3FC) : const Color(0xFF0F3D6E),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // MỤC 5: THÔNG TIN NHÓM THỰC HIỆN & LIÊN HỆ
+        cardWrapper(
+          '5. Thông tin Nhóm thực hiện & Liên hệ',
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '• Trường Đại học Bách Khoa – ĐHQG TP. Hồ Chí Minh (Khoa Kỹ thuật Xây dựng)\n'
+                '• Giảng viên hướng dẫn: PGS.TS. Ngô Hữu Cường\n'
+                '• Học viên thực hiện: Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624)',
+                style: bodyStyle(),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: formulaBg,
+                  borderRadius: BorderRadius.circular(7),
+                  border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.45)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.email_outlined, size: 15, color: Color(0xFF10B981)),
+                    SizedBox(width: 7),
+                    Expanded(
+                      child: SelectableText(
+                        'Liên hệ: vothanhvang@gmail.com',
+                        style: TextStyle(fontSize: 11.2, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ],
+    );
+  }
+}
+
+/// Widget vẽ dấu căn bậc hai ĐẦY ĐỦ chuẩn sách giáo khoa (có thanh ngang
+/// vinculum phủ trọn 100% chiều rộng biểu thức bên trong dấu căn).
+class _MathSqrt extends StatelessWidget {
+  final Widget child;
+  final Color color;
+  const _MathSqrt({required this.child, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _RadicalPainter(color: color),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 14, top: 4, right: 4, bottom: 1),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _RadicalPainter extends CustomPainter {
+  final Color color;
+  const _RadicalPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.45
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final topY = 1.5;
+    final botY = size.height - 1.5;
+    final midY = size.height * 0.56;
+
+    final path = Path()
+      ..moveTo(0.8, midY + 1.0) // móc ngang ngắn bên trái
+      ..lineTo(3.2, midY - 0.5)
+      ..lineTo(6.4, botY) // đi xuống đáy dấu căn
+      ..lineTo(11.5, topY) // kéo chéo lên đỉnh
+      ..lineTo(size.width - 1.2, topY) // thanh gạch ngang phủ trọn biểu thức (vinculum)
+      ..lineTo(size.width - 1.2, topY + 2.6); // móc xuống nhỏ cuối thanh căn chuẩn SGK
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _RadicalPainter oldDelegate) => oldDelegate.color != color;
+}
+
+/// Widget phân số xếp tầng chuẩn Toán học (tử số / gạch phân số / mẫu số)
+class _MathFrac extends StatelessWidget {
+  final Widget numerator;
+  final Widget denominator;
+  final Color color;
+
+  const _MathFrac({
+    required this.numerator,
+    required this.denominator,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return IntrinsicWidth(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: numerator,
+          ),
+          Container(
+            height: 1.3,
+            margin: const EdgeInsets.symmetric(vertical: 1.5),
+            color: color,
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: denominator,
+          ),
+        ],
+      ),
     );
   }
 }

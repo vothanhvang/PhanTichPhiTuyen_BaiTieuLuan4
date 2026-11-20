@@ -210,6 +210,7 @@ class _AnsysViewport3DState extends State<AnsysViewport3D> {
                     painter: _Ansys3DPainter(
                       model: widget.model,
                       result: widget.result,
+                      field: widget.field,
                       values: vals,
                       minVal: minV,
                       maxVal: maxV,
@@ -426,6 +427,7 @@ class _Face3D {
 class _Ansys3DPainter extends CustomPainter {
   final TrussModelData model;
   final TrussAnalysisResult result;
+  final ContourField field;
   final List<double> values;
   final double minVal;
   final double maxVal;
@@ -440,6 +442,7 @@ class _Ansys3DPainter extends CustomPainter {
   _Ansys3DPainter({
     required this.model,
     required this.result,
+    required this.field,
     required this.values,
     required this.minVal,
     required this.maxVal,
@@ -723,15 +726,36 @@ class _Ansys3DPainter extends CustomPainter {
       _drawLabel(
         canvas,
         cutScreen + const Offset(14, -24),
-        'MẶT CẮT PHẪU THUẬT ξ=${probeXi.toStringAsFixed(2)}\nσ=${result.stressMpa[eSel].toStringAsFixed(2)} MPa',
+        'MẶT CẮT PHẪU THUẬT ξ=${probeXi.toStringAsFixed(2)}\n${field.symbol} = ${field.formatValue(values[eSel])}',
         const Color(0xFF00E5FF),
       );
     }
 
-    // 7. Nhãn tên các nút 3D
+    // 6b. Nhãn giá trị động trên từng thanh 3D (đồng bộ 100% với tùy chọn ContourField!)
+    final span3d = (maxVal - minVal).abs() < 1e-12 ? 1.0 : (maxVal - minVal);
+    for (int e = 0; e < model.nElems; e++) {
+      if (surgicalMode && e == selectedElem.clamp(0, model.nElems - 1)) continue;
+      final p1 = nodePos3D[model.conn[e][0] - 1];
+      final p2 = nodePos3D[model.conn[e][1] - 1];
+      final mid3 = (p1 + p2) * 0.5;
+      final sp = cam.project(mid3).pt;
+      final tCol = ((values[e] - minVal) / span3d).clamp(0.0, 1.0);
+      _drawBadge3D(
+        canvas,
+        sp + Offset(0, e == 0 ? 16 : (e == 2 ? -16 : 0)),
+        'T${e + 1}: ${field.formatValue(values[e])}',
+        ansysRainbowColor(tCol),
+      );
+    }
+
+    // 7. Nhãn tên các nút 3D (kèm ||u|| khi đang chọn hiển thị chuyển vị)
     for (int i = 0; i < model.nNodes; i++) {
       final pt = cam.project(nodePos3D[i]).pt;
-      _drawLabel(canvas, pt + const Offset(10, -14), 'N${i + 1}',
+      final uNode = math.sqrt(math.pow(result.uMm[2 * i], 2) + math.pow(result.uMm[2 * i + 1], 2)) * playbackFraction;
+      final nodeLbl = field == ContourField.displacement
+          ? 'N${i + 1} (${uNode.toStringAsFixed(3)} mm)'
+          : 'N${i + 1}';
+      _drawLabel(canvas, pt + const Offset(10, -14), nodeLbl,
           darkMode ? Colors.white : const Color(0xFF0F172A));
     }
 
@@ -763,6 +787,31 @@ class _Ansys3DPainter extends CustomPainter {
       Path()..moveTo(b.dx, b.dy)..lineTo(p1.dx, p1.dy)..lineTo(p2.dx, p2.dy)..close(),
       Paint()..color = col,
     );
+  }
+
+  void _drawBadge3D(Canvas canvas, Offset center, String text, Color borderColor) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: darkMode ? Colors.white : const Color(0xFF0F172A),
+          fontSize: 9.2,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final rect = Rect.fromCenter(center: center, width: tp.width + 10, height: tp.height + 5);
+    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(5));
+    canvas.drawRRect(rrect, Paint()..color = darkMode ? const Color(0xBF0B1220) : const Color(0xD9FFFFFF));
+    canvas.drawRRect(
+      rrect,
+      Paint()
+        ..color = borderColor.withValues(alpha: 0.85)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0,
+    );
+    tp.paint(canvas, Offset(center.dx - tp.width / 2, center.dy - tp.height / 2));
   }
 
   void _drawLabel(Canvas canvas, Offset pos, String text, Color col) {

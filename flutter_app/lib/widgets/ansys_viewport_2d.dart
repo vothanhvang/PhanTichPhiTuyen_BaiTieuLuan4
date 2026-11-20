@@ -195,6 +195,7 @@ class _AnsysViewport2DState extends State<AnsysViewport2D> {
                     painter: _Ansys2DPainter(
                       model: widget.model,
                       result: widget.result,
+                      field: widget.field,
                       values: vals,
                       minVal: minV,
                       maxVal: maxV,
@@ -304,6 +305,7 @@ class _Transform2D {
 class _Ansys2DPainter extends CustomPainter {
   final TrussModelData model;
   final TrussAnalysisResult result;
+  final ContourField field;
   final List<double> values;
   final double minVal;
   final double maxVal;
@@ -318,6 +320,7 @@ class _Ansys2DPainter extends CustomPainter {
   _Ansys2DPainter({
     required this.model,
     required this.result,
+    required this.field,
     required this.values,
     required this.minVal,
     required this.maxVal,
@@ -430,12 +433,12 @@ class _Ansys2DPainter extends CustomPainter {
         );
       }
 
-      // Nhãn giá trị nổi giữa thanh
+      // Nhãn giá trị nổi giữa thanh — đồng bộ 100% với trường hiển thị đang chọn
       final mid = Offset(0.5 * (a.dx + b.dx), 0.5 * (a.dy + b.dy));
       _drawBadge(
         canvas,
         mid + Offset(0, e == 0 ? 22 : (e == 2 ? -22 : 0)),
-        'T${e + 1}(${model.memberLabels[e]}): ${result.stressMpa[e].toStringAsFixed(2)} MPa',
+        'T${e + 1}(${model.memberLabels[e]}): ${field.symbol} = ${field.formatValue(values[e])}',
         barColor,
       );
     }
@@ -443,7 +446,7 @@ class _Ansys2DPainter extends CustomPainter {
     // 4. Vẽ gối tựa & mũi tên ngoại lực P
     _drawSupportsAndLoads(canvas);
 
-    // 5. Vẽ nút khớp 2D
+    // 5. Vẽ nút khớp 2D (kèm chuyển vị nút khi đang xem Chuyển vị tổng ||u||)
     for (int i = 0; i < model.nNodes; i++) {
       final p = tf.toScreen(
         model.coords[i][0] + deformScale * result.uMm[2 * i],
@@ -458,10 +461,14 @@ class _Ansys2DPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.4,
       );
+      final uNode = math.sqrt(math.pow(result.uMm[2 * i], 2) + math.pow(result.uMm[2 * i + 1], 2)) * playbackFraction;
+      final nodeLabel = field == ContourField.displacement
+          ? 'N${i + 1} (${uNode.toStringAsFixed(3)} mm)'
+          : 'N${i + 1}';
       _drawText(
         canvas,
         p + const Offset(10, -16),
-        'N${i + 1}',
+        nodeLabel,
         darkMode ? Colors.white : const Color(0xFF0F172A),
         11,
         bold: true,

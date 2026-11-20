@@ -88,7 +88,7 @@ class FlutterReportGenerator {
     body.write(_docxParagraph('TRƯỜNG ĐẠI HỌC BÁCH KHOA – ĐHQG TP. HỒ CHÍ MINH', bold: true, sizeHalfPt: 22, colorHex: '0F3D6E', align: 'center'));
     body.write(_docxParagraph('KHOA KỸ THUẬT XÂY DỰNG – BỘ MÔN CÔNG TRÌNH', bold: true, sizeHalfPt: 20, colorHex: '334155', align: 'center'));
     body.write(_docxParagraph('THUYẾT MINH KẾT QUẢ PHÂN TÍCH PHI TUYẾN HÌNH HỌC HỆ DÀN (CALFEM)', bold: true, sizeHalfPt: 28, colorHex: '0F172A', align: 'center'));
-    body.write(_docxParagraph('Học viên thực hiện: Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624)  |  GVHD: PGS.TS. Ngô Hữu Cường  |  Xuất lúc: $ts', sizeHalfPt: 18, colorHex: '475569', align: 'center'));
+    body.write(_docxParagraph('Học viên thực hiện: Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624)  |  GVHD: PGS.TS. Ngô Hữu Cường  |  Liên hệ: vothanhvang@gmail.com  |  Xuất lúc: $ts', sizeHalfPt: 17, colorHex: '475569', align: 'center'));
 
     body.write(_docxParagraph('1. THÔNG SỐ ĐẦU VÀO & PHƯƠNG PHÁP PHÂN TÍCH', bold: true, sizeHalfPt: 24, colorHex: '0F3D6E'));
     body.write(_docxParagraph('• Mô hình: ${model.name} — ${model.description}'));
@@ -231,8 +231,9 @@ class FlutterReportGenerator {
                     style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14, color: PdfColors.black),
                     textAlign: pw.TextAlign.center),
                 pw.SizedBox(height: 3),
-                pw.Text('Học viên: Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624) | GVHD: PGS.TS. Ngô Hữu Cường | Xuất: $ts',
-                    style: pw.TextStyle(fontSize: 8.0, color: slate)),
+                pw.Text('Học viên: Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624) | GVHD: PGS.TS. Ngô Hữu Cường | Liên hệ: vothanhvang@gmail.com | Xuất: $ts',
+                    style: pw.TextStyle(fontSize: 7.6, color: slate),
+                    textAlign: pw.TextAlign.center),
               ],
             ),
           ),
