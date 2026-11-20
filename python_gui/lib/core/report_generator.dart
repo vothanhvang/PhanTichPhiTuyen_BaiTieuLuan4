@@ -96,7 +96,16 @@ class FlutterReportGenerator {
     body.write(_docxParagraph('• Thuật toán phi tuyến: ${nonlinear.methodName} (Hội tụ: ${nonlinear.converged ? "ĐẠT" : "KHÔNG ĐẠT"}, ${nonlinear.totalIterations} vòng lặp).'));
     body.write(_docxParagraph('• Tài liệu & công thức áp dụng: CALFEM 3.4 bar2e/bar2g (calfem34.pdf tr. 5.3-2..5); Olsson & Dahlblom (2016) Chương 9 PT (9.35)-(9.38) tr. 259; Bài giảng NSA_4 Slides 6-12 & NSA_6 Mục 6.2-6.3; McGuire (2000) Chương 9 & 12.'));
 
-    body.write(_docxParagraph('2. BẢNG SO SÁNH CHUYỂN VỊ NÚT & PHẢN LỰC GỐI (TUYẾN TÍNH VS PHI TUYẾN)', bold: true, sizeHalfPt: 24, colorHex: '0F3D6E'));
+    body.write(_docxParagraph('2. TÓM TẮT 7 CÔNG THỨC TOÁN HỌC ÁP DỤNG', bold: true, sizeHalfPt: 24, colorHex: '0F3D6E'));
+    body.write(_docxParagraph('(1) Định lý Py-ta-go: l = √[(Δx₀ + Δuₓ)² + (Δy₀ + Δuᵧ)²].'));
+    body.write(_docxParagraph('(2) Hiệu hai bình phương khử sai số làm tròn: l − L₀ = (l² − L₀²) / (l + L₀).'));
+    body.write(_docxParagraph('(3) Lượng giác & Cosin chỉ phương: c = cos θ = (x₂ − x₁)/L ; s = sin θ = (y₂ − y₁)/L (c² + s² = 1).'));
+    body.write(_docxParagraph('(4) Khai triển nhị thức Newton: (1 + d)^(1/2) ≈ 1 + d/2 → dẫn xuất biến dạng Green-Lagrange.'));
+    body.write(_docxParagraph('(5) Đạo hàm, biến phân & tích phân xác định: δ(f²) = 2f·δf ; ∫₀ᴸ (1/L²) dx = 1/L.'));
+    body.write(_docxParagraph('(6) Phương pháp tiếp tuyến Newton-Raphson: u^(k+1) = u^(k) + [K_t]⁻¹ · {P − f_int(u^(k))}.'));
+    body.write(_docxParagraph('(7) Quy tắc đòn bẩy mô-men & Trị riêng mất ổn định: R₄ᵧ = −P·(L + u₂ₓ)/(2L + u₄ₓ) ; det(K_e + α_cr·K_g) = 0.'));
+
+    body.write(_docxParagraph('3. BẢNG SO SÁNH CHUYỂN VỊ NÚT & PHẢN LỰC GỐI (TUYẾN TÍNH VS PHI TUYẾN)', bold: true, sizeHalfPt: 24, colorHex: '0F3D6E'));
     final nodeRows = <List<String>>[];
     for (int i = 0; i < model.nNodes; i++) {
       nodeRows.add([
@@ -115,7 +124,7 @@ class FlutterReportGenerator {
       '1B365D',
     ));
 
-    body.write(_docxParagraph('3. BẢNG NỘI LỰC, ỨNG SUẤT & BIẾN DẠNG CÁC THANH DÀN', bold: true, sizeHalfPt: 24, colorHex: '0F3D6E'));
+    body.write(_docxParagraph('4. BẢNG NỘI LỰC, ỨNG SUẤT & BIẾN DẠNG CÁC THANH DÀN', bold: true, sizeHalfPt: 24, colorHex: '0F3D6E'));
     final memRows = <List<String>>[];
     for (int e = 0; e < model.nElems; e++) {
       memRows.add([
@@ -134,7 +143,7 @@ class FlutterReportGenerator {
       '0F766E',
     ));
 
-    body.write(_docxParagraph('4. KẾT QUẢ KHẢO SÁT & PHẪU THUẬT MẶT CẮT TẠI ĐIỂM ĐANG CHỌN', bold: true, sizeHalfPt: 24, colorHex: '0F3D6E'));
+    body.write(_docxParagraph('5. KẾT QUẢ KHẢO SÁT & PHẪU THUẬT MẶT CẮT TẠI ĐIỂM ĐANG CHỌN', bold: true, sizeHalfPt: 24, colorHex: '0F3D6E'));
     body.write(_docxParagraph(
       '• Vị trí phẫu thuật: Thanh ${probe.memberLabel} tại tọa độ chuẩn hóa ξ = ${probe.xi.toStringAsFixed(2)} (s = ${probe.sMm.toStringAsFixed(1)} mm), thớ (η = ${probe.etaNorm.toStringAsFixed(2)}, ζ = ${probe.zetaNorm.toStringAsFixed(2)}), tiết diện ${model.sectionShape.label}.',
     ));
@@ -145,7 +154,7 @@ class FlutterReportGenerator {
       '• Biến dạng dọc ε_xx = ${probe.epsXxMicro.toStringAsFixed(2)} με | Co/nở ngang Poisson ε_yy = ε_zz = ${probe.epsPoissonMicro.toStringAsFixed(2)} με | Góc xoay vật rắn Δθ = ${probe.rotationDeg.toStringAsFixed(5)}°.',
     ));
 
-    body.write(_docxParagraph('5. KIỂM CHỨNG CÂN BẰNG CẤU HÌNH BIẾN DẠNG & NĂNG LƯỢNG', bold: true, sizeHalfPt: 24, colorHex: '0F3D6E'));
+    body.write(_docxParagraph('6. KIỂM CHỨNG CÂN BẰNG CẤU HÌNH BIẾN DẠNG & NĂNG LƯỢNG', bold: true, sizeHalfPt: 24, colorHex: '0F3D6E'));
     body.write(_docxParagraph(
       '• Kiểm tra cân bằng toàn hệ: ∑Fx = ${nonlinear.sumFxN.toStringAsExponential(3)} N | ∑Fy = ${nonlinear.sumFyN.toStringAsExponential(3)} N | ∑M_biến_dạng = ${nonlinear.sumMNmm.toStringAsExponential(3)} N·mm | Phần dư tự do max = ${nonlinear.maxFreeResidualN.toStringAsExponential(3)} N.',
     ));
@@ -248,8 +257,19 @@ class FlutterReportGenerator {
             '• Lõi giải: ${nonlinear.engineSource} | Hội tụ: ${nonlinear.converged ? "ĐẠT" : "KHÔNG ĐẠT"} (${nonlinear.totalIterations} vòng lặp).',
             style: const pw.TextStyle(fontSize: 9, lineSpacing: 2.5),
           ),
-          pw.SizedBox(height: 10),
-          pw.Text('2. Bảng chuyển vị nút & phản lực gối (Tuyến tính vs Phi tuyến)',
+          pw.SizedBox(height: 8),
+          pw.Text('2. Tóm tắt 7 công thức Toán học áp dụng',
+              style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10.5, color: navy)),
+          pw.SizedBox(height: 2),
+          pw.Text(
+            '(1) Py-ta-go: l = √[(Δx₀+Δuₓ)²+(Δy₀+Δuᵧ)²]  |  (2) Hiệu bình phương: l−L₀ = (l²−L₀²)/(l+L₀)\n'
+            '(3) Cosin chỉ phương: c = (x₂−x₁)/L, s = (y₂−y₁)/L  |  (4) Nhị thức Newton: (1+d)^(1/2) ≈ 1 + d/2\n'
+            '(5) Biến phân & Tích phân: δ(f²)=2f·δf, ∫₀ᴸ(1/L²)dx=1/L  |  (6) Newton-Raphson: u^(k+1)=u^(k)+[K_t]⁻¹R\n'
+            '(7) Đòn bẩy biến dạng & Trị riêng: R₄ᵧ = −P·(L+u₂ₓ)/(2L+u₄ₓ) ; det(K_e + α_cr·K_g) = 0.',
+            style: const pw.TextStyle(fontSize: 8.2, lineSpacing: 2.2),
+          ),
+          pw.SizedBox(height: 8),
+          pw.Text('3. Bảng chuyển vị nút & phản lực gối (Tuyến tính vs Phi tuyến)',
               style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11, color: navy)),
           pw.SizedBox(height: 4),
           pw.TableHelper.fromTextArray(
@@ -272,7 +292,7 @@ class FlutterReportGenerator {
             ],
           ),
           pw.SizedBox(height: 10),
-          pw.Text('3. Bảng nội lực, ứng suất & biến dạng các phần tử thanh',
+          pw.Text('4. Bảng nội lực, ứng suất & biến dạng các phần tử thanh',
               style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11, color: teal)),
           pw.SizedBox(height: 4),
           pw.TableHelper.fromTextArray(
@@ -295,7 +315,7 @@ class FlutterReportGenerator {
             ],
           ),
           pw.SizedBox(height: 10),
-          pw.Text('4. Khảo sát điểm & phẫu thuật mặt cắt đang chọn',
+          pw.Text('5. Khảo sát điểm & phẫu thuật mặt cắt đang chọn',
               style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11, color: navy)),
           pw.SizedBox(height: 3),
           pw.Text(

@@ -23,11 +23,15 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
       GetCommandLineArguments();
 
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
+  // Tắt Impeller trên Windows để dùng bộ kết xuất Skia (tự động hỗ trợ cả GPU
+  // phần cứng lẫn Software Rendering khi GPU lai Intel/NVIDIA báo lỗi D3D11,
+  // đảm bảo mở được 100% trên mọi máy tính Windows 10/11!).
+  project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);
 
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  if (!window.Create(L"CALFEM Python Studio - 2D/3D ANSYS", origin, size)) {
+  if (!window.Create(L"CALFEM Python Studio - Mô phỏng 2D/3D", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

@@ -1,26 +1,26 @@
-# Phân Tích Phi Tuyến Hình Học Hệ Dàn Phẳng Bằng CALFEM (Python 2D/3D ANSYS)
+# Phân Tích Phi Tuyến Hình Học Hệ Dàn Phẳng Bằng CALFEM (Python 2D/3D)
 
 > **Tiểu luận môn Phân tích Phi tuyến Kết cấu**  
 > **Trường Đại học Bách Khoa – ĐHQG TP. Hồ Chí Minh** | Khoa Kỹ thuật Xây dựng – Bộ môn Công trình  
 > **Giảng viên hướng dẫn:** PGS.TS. Ngô Hữu Cường  
 > **Học viên thực hiện:** Lâm Phúc Tâm (`2670621`) - Võ Thanh Vang (`2670624`) | **Liên hệ:** `vothanhvang@gmail.com`
 
-[![Chạy trực tiếp trên GitHub Pages](https://img.shields.io/badge/▶%20CHẠY%20TRỰC%20TIẾP%202D%2F3D%20ANSYS-GitHub%20Pages-06B6D4?style=for-the-badge)](https://vothanhvang.github.io/PhanTichPhiTuyen_BaiTieuLuan4/)
+[![Chạy trực tiếp trên GitHub Pages](https://img.shields.io/badge/▶%20CHẠY%20TRỰC%20TIẾP%202D%2F3D-GitHub%20Pages-06B6D4?style=for-the-badge)](https://vothanhvang.github.io/PhanTichPhiTuyen_BaiTieuLuan4/)
 [![Tải Windows EXE](https://img.shields.io/badge/Windows%2010%2F11-.exe%20Native%20Portable%20(13MB)-2563EB?style=for-the-badge)](releases/PhanTichPhiTuyen_CALFEM_Windows_x64.exe)
-[![Tải Android APK](https://img.shields.io/badge/Android%20ARM64-Xiaomi%20Pad%208%20Pro%20%2F%2013T%20Pro-10B981?style=for-the-badge)](releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk)
+[![Tải Android APK](https://img.shields.io/badge/Android%20ARM64-Tablet%20%26%20Phone-10B981?style=for-the-badge)](releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk)
 
 ---
 
 ## 1. Trải nghiệm Trực tiếp Chương trình ngay trên GitHub
 
-Mở trực tiếp ứng dụng mô phỏng **2D & 3D chuẩn ANSYS** (có xoay/pan/zoom 3D, **Phẫu thuật mặt cắt ngang/dọc**, so sánh 4 mô hình CALFEM & 6 thuật toán giải `NSA_6`, và **xuất Thuyết minh Word `.docx` / Báo cáo PDF `.pdf`** ngay trên trình duyệt):
+Mở trực tiếp ứng dụng mô phỏng **2D & 3D trực quan** (có xoay/pan/zoom 3D, **Phẫu thuật mặt cắt ngang/dọc**, nhập số trực tiếp + Reset mặc định, so sánh 4 mô hình CALFEM & 6 thuật toán giải `NSA_6`, và **xuất Thuyết minh Word `.docx` / Báo cáo PDF `.pdf`** kèm hộp thoại chọn nơi lưu ngay trên trình duyệt):
 
 - **Ứng dụng Web trực tuyến (GitHub Pages):** https://vothanhvang.github.io/PhanTichPhiTuyen_BaiTieuLuan4/
 - **File cài đặt / chạy trực tiếp:**
   - **Windows x64 (bất kỳ PC Windows nào):** [`releases/PhanTichPhiTuyen_CALFEM_Windows_x64.exe`](releases/PhanTichPhiTuyen_CALFEM_Windows_x64.exe) *(nhấp đúp chạy ngay, không cần cài Python)*
-  - **Android ARM64 (Xiaomi Pad 8 Pro & Xiaomi 13T Pro):** [`releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk`](releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk)
+  - **Android ARM64 (Máy tính bảng & Điện thoại):** [`releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk`](releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk)
 
-![Giao diện 3D ANSYS và Phẫu thuật mặt cắt](results/figures/fig09_app_python_3d_ansys.png)
+![Giao diện 3D và Phẫu thuật mặt cắt](results/figures/fig09_app_python_3d_ansys.png)
 
 ---
 
@@ -28,7 +28,7 @@ Mở trực tiếp ứng dụng mô phỏng **2D & 3D chuẩn ANSYS** (có xoay/
 
 | Loại tài liệu | Tên tệp | Nội dung chính |
 |---|---|---|
-| **Thuyết minh Word** | [`ThuyetMinh_PhanTichPhiTuyenHinhHoc_CALFEM.docx`](ThuyetMinh_PhanTichPhiTuyenHinhHoc_CALFEM.docx) | Đầy đủ công thức Word OMML chỉnh sửa được, dẫn nguồn số trang sách & PDF, tóm tắt Toán cấp 3 + Cơ học trước khi giải, lời giải từng bước, 5 bản chất vật lý và kiến trúc phần mềm Python 2D/3D ANSYS. |
+| **Thuyết minh Word** | [`ThuyetMinh_PhanTichPhiTuyenHinhHoc_CALFEM.docx`](ThuyetMinh_PhanTichPhiTuyenHinhHoc_CALFEM.docx) | Đầy đủ công thức Word OMML chỉnh sửa được, dẫn nguồn số trang sách & PDF, tóm tắt 7 công thức Toán học + Cơ học trước khi giải, lời giải từng bước, 5 bản chất vật lý và kiến trúc phần mềm Python 2D/3D. |
 | **Thuyết minh PDF** | [`ThuyetMinh_PhanTichPhiTuyenHinhHoc_CALFEM.pdf`](ThuyetMinh_PhanTichPhiTuyenHinhHoc_CALFEM.pdf) | Bản PDF xuất trực tiếp từ Microsoft Word, sẵn sàng in ấn & nộp bài. |
 | **Slide PowerPoint** | [`BaoCao_PhanTichPhiTuyenHinhHoc_CALFEM.pptx`](BaoCao_PhanTichPhiTuyenHinhHoc_CALFEM.pptx) | 22 slide 16:9 hiện đại phục vụ báo cáo tiểu luận trước lớp và Thầy hướng dẫn. |
 | **Slide PDF** | [`BaoCao_PhanTichPhiTuyenHinhHoc_CALFEM.pdf`](BaoCao_PhanTichPhiTuyenHinhHoc_CALFEM.pdf) | Bản PDF của bộ slide trình chiếu. |

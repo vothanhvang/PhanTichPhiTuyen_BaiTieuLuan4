@@ -23,7 +23,7 @@ class CalfemNonlinearApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final isWindowsDesktop = !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
     return MaterialApp(
-      title: 'CALFEM Nonlinear Studio — Phân tích Phi tuyến Hình học 2D/3D',
+      title: 'CALFEM Python Studio — Phân tích Phi tuyến Hình học 2D/3D',
       debugShowCheckedModeBanner: false,
       builder: (context, child) => ExcludeSemantics(
         excluding: isWindowsDesktop,

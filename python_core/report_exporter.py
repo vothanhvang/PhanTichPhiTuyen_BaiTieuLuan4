@@ -136,9 +136,14 @@ def export_quick_docx_report(
         f"(Hội tụ: {'ĐẠT' if res_nonlinear.converged else 'KHÔNG ĐẠT'})."
     )
 
-    # 2. Tóm tắt công thức áp dụng
-    add_h("2. TÓM TẮT CÔNG THỨC CƠ HỌC & DẪN NGUỒN TÀI LIỆU")
+    # 2. Tóm tắt 7 công thức Toán học & Công thức Cơ học áp dụng
+    add_h("2. TÓM TẮT 7 CÔNG THỨC TOÁN HỌC & CÔNG THỨC CƠ HỌC ÁP DỤNG")
     doc.add_paragraph(
+        "• 7 công thức Toán học áp dụng:\n"
+        "  (1) Định lý Py-ta-go: l = √[(Δx₀+Δuₓ)² + (Δy₀+Δuᵧ)²];  (2) Hiệu hai bình phương: l − L₀ = (l² − L₀²)/(l + L₀);\n"
+        "  (3) Cosin chỉ phương: c = (x₂−x₁)/L, s = (y₂−y₁)/L;  (4) Nhị thức Newton: (1 + d)^(1/2) ≈ 1 + d/2;\n"
+        "  (5) Đạo hàm/biến phân & tích phân: δ(f²) = 2f·δf, ∫₀ᴸ(1/L²)dx = 1/L;  (6) Tiếp tuyến Newton-Raphson: u^(k+1) = u^(k) + [Kt]⁻¹R;\n"
+        "  (7) Đòn bẩy biến dạng & Trị riêng: R₄y = −P·(L+u₂x)/(2L+u₄x); det(Ke + α_cr·Kg) = 0.\n"
         "• Độ cứng tuyến tính CALFEM bar2e (calfem34.pdf tr. 5.3-2 / PDF tr. 60): "
         "Ke = (EA/L) · Gᵀ · [[1, -1], [-1, 1]] · G.\n"
         "• Độ cứng phi tuyến hình học CALFEM bar2g (calfem34.pdf tr. 5.3-3; Dahlblom 2016 PT 9.35-9.38 tr. 259): "

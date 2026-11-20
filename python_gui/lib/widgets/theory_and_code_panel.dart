@@ -68,13 +68,13 @@ class TheoryAndCodePanel extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        // MỤC 1: TOÁN PHỔ THÔNG CẤP 3 VỚI DẤU CĂN ĐẦY ĐỦ & PHÂN SỐ CHUẨN SÁCH GIÁO KHOA
+        // MỤC 1: TÓM TẮT 7 CÔNG THỨC TOÁN HỌC VỚI DẤU CĂN ĐẦY ĐỦ & PHÂN SỐ CHUẨN
         cardWrapper(
-          '1. Tóm tắt Kiến thức Toán Phổ thông Cấp 3 dùng trong Bài toán',
+          '1. Tóm tắt 7 công thức Toán học',
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('• Định lý Py-ta-go (Lớp 7): Chiều dài thực thanh biến dạng:', style: bodyStyle()),
+              Text('1) Định lý Py-ta-go — Chiều dài thực thanh sau biến dạng:', style: bodyStyle()),
               formulaBox(
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -88,7 +88,7 @@ class TheoryAndCodePanel extends StatelessWidget {
                   ],
                 ),
               ),
-              Text('• Hằng đẳng thức hiệu hai bình phương (Lớp 8) — khử sai số làm tròn máy tính:', style: bodyStyle()),
+              Text('2) Hằng đẳng thức hiệu hai bình phương — Khử sai số làm tròn máy tính:', style: bodyStyle()),
               formulaBox(
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -103,7 +103,28 @@ class TheoryAndCodePanel extends StatelessWidget {
                   ],
                 ),
               ),
-              Text('• Khai triển nhị thức Newton (Lớp 11) → suy ra biến dạng hữu hạn Green-Lagrange:', style: bodyStyle()),
+              Text('3) Lượng giác & Cosin chỉ phương (c² + s² = 1):', style: bodyStyle()),
+              formulaBox(
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text('c = cos θ = ', style: mathStyle(bold: true)),
+                    _MathFrac(
+                      numerator: Text('x₂ − x₁', style: mathStyle()),
+                      denominator: Text('L', style: mathStyle()),
+                      color: mathColor,
+                    ),
+                    Text('   ;   s = sin θ = ', style: mathStyle(bold: true)),
+                    _MathFrac(
+                      numerator: Text('y₂ − y₁', style: mathStyle()),
+                      denominator: Text('L', style: mathStyle()),
+                      color: mathColor,
+                    ),
+                  ],
+                ),
+              ),
+              Text('4) Khai triển nhị thức Newton → dẫn xuất biến dạng Green-Lagrange:', style: bodyStyle()),
               formulaBox(
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -122,7 +143,28 @@ class TheoryAndCodePanel extends StatelessWidget {
                   ],
                 ),
               ),
-              Text('• Phương pháp tiếp tuyến Newton-Raphson (Lớp 11–12) giải hệ phi tuyến:', style: bodyStyle()),
+              Text('5) Đạo hàm, biến phân bình phương & Tích phân xác định:', style: bodyStyle()),
+              formulaBox(
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text('δ(f²) = 2f · δf   ;   ∫₀ᴸ ', style: mathStyle(bold: true)),
+                    _MathFrac(
+                      numerator: Text('1', style: mathStyle()),
+                      denominator: Text('L²', style: mathStyle()),
+                      color: mathColor,
+                    ),
+                    Text(' dx = ', style: mathStyle(bold: true)),
+                    _MathFrac(
+                      numerator: Text('1', style: mathStyle()),
+                      denominator: Text('L', style: mathStyle()),
+                      color: mathColor,
+                    ),
+                  ],
+                ),
+              ),
+              Text('6) Phương pháp tiếp tuyến Newton-Raphson giải hệ phi tuyến:', style: bodyStyle()),
               formulaBox(
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -137,9 +179,21 @@ class TheoryAndCodePanel extends StatelessWidget {
                   ],
                 ),
               ),
-              Text('• Quy tắc đòn bẩy / Mô-men lực (Vật lý 10) — giải thích vì sao R₁ᵧ ≠ R₄ᵧ:', style: bodyStyle()),
+              Text('7) Quy tắc đòn bẩy mô-men biến dạng & Bài toán trị riêng mất ổn định:', style: bodyStyle()),
               formulaBox(
-                Text('R₄ᵧ · (2L + u₄ₓ) = −P · (L + u₂ₓ)', style: mathStyle(bold: true)),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text('R₄ᵧ = −P · ', style: mathStyle(bold: true)),
+                    _MathFrac(
+                      numerator: Text('L + u₂ₓ', style: mathStyle()),
+                      denominator: Text('2L + u₄ₓ', style: mathStyle()),
+                      color: mathColor,
+                    ),
+                    Text('   ;   det(K_e + α_cr·K_g) = 0', style: mathStyle(bold: true)),
+                  ],
+                ),
               ),
             ],
           ),

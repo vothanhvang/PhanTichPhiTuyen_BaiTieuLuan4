@@ -508,7 +508,7 @@ def _add_cover_page(doc: Document) -> None:
     rt2 = pt.add_run(
         "PHÂN TÍCH PHI TUYẾN HÌNH HỌC HỆ DÀN PHẲNG 4 NÚT – 5 THANH\n"
         "DỰA TRÊN THUẬT TOÁN CALFEM (bar2e, bar2g, COROTATIONAL UL & TOTAL LAGRANGIAN),\n"
-        "XÂY DỰNG PHẦN MỀM PYTHON VÀ GIAO DIỆN MÔ PHỎNG 2D/3D CHUẨN ANSYS"
+        "XÂY DỰNG PHẦN MỀM PYTHON VÀ GIAO DIỆN MÔ PHỎNG 2D/3D"
     )
     rt2.bold = True
     rt2.font.name = "Times New Roman"
@@ -534,7 +534,7 @@ def _add_cover_page(doc: Document) -> None:
         ("Học viên thực hiện:", "LÂM PHÚC TÂM (2670621)"),
         ("", "VÕ THANH VANG (2670624)"),
         ("Công cụ tính toán & kiểm chứng:", "Python (CALFEM 3.4, NumPy/SciPy), SAP2000"),
-        ("Đóng gói triển khai:", "Windows (.exe), Android (.apk — Xiaomi Pad 8 Pro & 13T Pro), GitHub Web"),
+        ("Đóng gói triển khai:", "Windows (.exe), Android (.apk), GitHub Web"),
         ("Kho mã nguồn & ứng dụng trực tuyến:", "https://github.com/vothanhvang/PhanTichPhiTuyen_BaiTieuLuan4"),
     ]
     for idx, (k, v) in enumerate(info_rows):
@@ -620,7 +620,7 @@ def build_word_report(base_dir: str) -> str:
             "3. Phát hiện thanh không lực 1–2 'hồi sinh': Trong tuyến tính N₁₂ ≡ 0 N, nhưng do định lý Py-ta-go khi Nút 2 dịch lên và cân bằng cấu hình biến dạng, thanh 1–2 phát sinh lực KÉO thực sự N₁₂ = +13,55 N (tại 1P) và bùng nổ lên +180,39 kN (tại 100P)!",
             "4. Bất đối xứng phản lực gối do quy tắc đòn bẩy biến dạng: Vì gối con lăn Nút 4 trượt sang phải (u₄x > 0), nhịp thực mở rộng thành 2L + u₄x làm |R₁y| = 104,0203 kN > |R₄y| = 103,9797 kN (lệch 40,57 N tại 1P).",
             "5. Phát hiện hiện tượng Bật nhảy Snap-Through thực sự của chính dàn 5 thanh: Khi đẩy tải lớn lên bằng Điều khiển chuyển vị / Chiều dài cung, kết cấu đạt điểm giới hạn thực P_lim = 78,45 MN tại u₂y = 480 mm — thấp hơn 4,41 lần so với tải trị riêng tuyến tính hóa P_cr = 346,00 MN!",
-            "6. Đóng gói phần mềm hoàn chỉnh bằng Python: Lõi tính toán Python CALFEM kết hợp giao diện mô phỏng 2D/3D chuẩn ANSYS có tính năng 'Phẫu thuật mặt cắt' soi ứng suất/biến dạng bên trong, nhập thông số trực tiếp kèm Reset mặc định, xuất báo cáo Word/PDF (có hộp thoại chọn nơi lưu), đóng gói .exe Windows, .apk Android (Xiaomi Pad 8 Pro & 13T Pro) và triển khai chạy trực tiếp trên GitHub!",
+            "6. Đóng gói phần mềm hoàn chỉnh bằng Python: Lõi tính toán Python CALFEM kết hợp giao diện mô phỏng 2D/3D hiện đại có tính năng 'Phẫu thuật mặt cắt' soi ứng suất/biến dạng bên trong, nhập thông số trực tiếp kèm Reset mặc định, xuất báo cáo Word/PDF (có hộp thoại chọn nơi lưu), đóng gói .exe Windows, .apk Android và triển khai chạy trực tiếp trên GitHub!",
         ],
         fill_hex="F0FDF4",
         accent_hex="0F766E",
@@ -735,10 +735,10 @@ def build_word_report(base_dir: str) -> str:
         "toàn bộ công thức Toán học phổ thông cấp 3 liên quan và hệ công thức Cơ học kết cấu phi tuyến CALFEM sẽ được áp dụng.",
     )
 
-    add_h2(doc, "2.1. Tóm tắt 7 công thức Toán học Phổ thông (Cấp 2 – Cấp 3) áp dụng trực tiếp")
-    add_p(doc, "Mọi công thức phức tạp của phân tích phi tuyến thực chất đều được xây dựng từ 7 viên gạch toán học quen thuộc ở trường phổ thông:")
+    add_h2(doc, "2.1. Tóm tắt 7 công thức Toán học")
+    add_p(doc, "Mọi công thức của phân tích phi tuyến hình học hệ dàn đều được xây dựng trực tiếp từ 7 công thức toán học nền tảng sau:")
 
-    add_h3(doc, "Công thức Toán 1 — Định lý Py-ta-go & Hằng đẳng thức hiệu hai bình phương (Toán lớp 7 & 8)")
+    add_h3(doc, "Công thức Toán 1 — Định lý Py-ta-go tính chiều dài thực thanh biến dạng")
     add_p(
         doc,
         "Một thanh nối từ điểm (x₁, y₁) đến (x₂, y₂) có hình chiếu ban đầu Δx₀ = x₂ − x₁, Δy₀ = y₂ − y₁. Sau khi hai đầu dịch chuyển "
@@ -763,9 +763,10 @@ def build_word_report(base_dir: str) -> str:
         ),
         "2.1",
     )
+    add_h3(doc, "Công thức Toán 2 — Hằng đẳng thức hiệu hai bình phương (khử sai số làm tròn)")
     add_p(
         doc,
-        "Mẹo đại số lớp 8 cực kỳ quan trọng khi lập trình máy tính: khi l rất gần L₀ (chênh nhau chỉ 0,0001 mm trên thanh dài 1000 mm), "
+        "Khi lập trình máy tính với l rất gần L₀ (chênh nhau chỉ 0,0001 mm trên thanh dài 1000 mm), "
         "phép trừ trực tiếp l − L₀ gây mất chữ số có nghĩa (catastrophic cancellation). Ta nhân liên hợp bằng hằng đẳng thức a² − b² = (a − b)(a + b) "
         "để đạt độ chính xác tuyệt đối 16 chữ số:",
     )
@@ -788,7 +789,7 @@ def build_word_report(base_dir: str) -> str:
         "2.2",
     )
 
-    add_h3(doc, "Công thức Toán 2 — Lượng giác & Cosin chỉ phương (Toán lớp 10)")
+    add_h3(doc, "Công thức Toán 3 — Lượng giác & Cosin chỉ phương")
     add_p(doc, "Góc nghiêng θ của thanh so với trục X quyết định hai hệ số chiếu lực và chuyển vị c = cos θ, s = sin θ (với c² + s² = 1):")
     add_equation(
         doc,
@@ -800,7 +801,7 @@ def build_word_report(base_dir: str) -> str:
         "2.3",
     )
 
-    add_h3(doc, "Công thức Toán 3 — Khai triển nhị thức Newton với số mũ hữu tỷ (Toán lớp 11 — NSA_4 Slide 8)")
+    add_h3(doc, "Công thức Toán 4 — Khai triển nhị thức Newton với số mũ hữu tỷ (NSA_4 Slide 8)")
     add_p(doc, "Khi |d| rất nhỏ so với 1, bỏ các lũy thừa bậc cao từ d² trở đi, ta thu được công thức khai triển dùng trực tiếp để dẫn biến dạng Green-Lagrange:")
     add_equation(
         doc,
@@ -817,10 +818,10 @@ def build_word_report(base_dir: str) -> str:
         "2.4",
     )
 
-    add_h3(doc, "Công thức Toán 4 — Đạo hàm, biến phân hàm bình phương & Tích phân xác định (Toán lớp 11–12)")
+    add_h3(doc, "Công thức Toán 5 — Đạo hàm, biến phân hàm bình phương & Tích phân xác định")
     add_p(
         doc,
-        "Trong Nguyên lý công ảo (NSA_4 Slide 10), ký hiệu biến phân δ hoạt động y hệt phép lấy vi phân d trong Giải tích 11: "
+        "Trong Nguyên lý công ảo (NSA_4 Slide 10), ký hiệu biến phân δ hoạt động y hệt phép lấy vi phân d trong Giải tích: "
         "δ(f²) = 2f·δf; còn tích phân một hằng số C trên đoạn [0, L] cho ra C·L:",
     )
     add_equation(
@@ -835,7 +836,7 @@ def build_word_report(base_dir: str) -> str:
         "2.5",
     )
 
-    add_h3(doc, "Công thức Toán 5 — Phương pháp tiếp tuyến Newton giải phương trình phi tuyến (Giải tích 11–12)")
+    add_h3(doc, "Công thức Toán 6 — Phương pháp tiếp tuyến Newton-Raphson giải hệ phi tuyến")
     add_p(
         doc,
         "Muốn tìm nghiệm u sao cho nội lực bằng ngoại lực f_int(u) = P, ta đặt hàm sai số (lực dư) R(u) = P − f_int(u) = 0. "
@@ -852,7 +853,7 @@ def build_word_report(base_dir: str) -> str:
         "2.6",
     )
 
-    add_h3(doc, "Công thức Toán 6 — Quy tắc đòn bẩy mô-men (Vật lý 10) & Bài toán Trị riêng (Đại số tuyến tính)")
+    add_h3(doc, "Công thức Toán 7 — Quy tắc đòn bẩy mô-men biến dạng & Bài toán Trị riêng")
     add_p(
         doc,
         "• Cân bằng mô-men quanh gối 1 ở tọa độ (0, 0) trên cấu hình đã biến dạng: tổng mô-men bằng 0 cho ta công thức đòn bẩy chính xác "
@@ -1118,7 +1119,7 @@ def build_word_report(base_dir: str) -> str:
     add_figure(
         doc,
         os.path.join(fig_dir, "fig01_mo_hinh_va_bien_dang.png"),
-        "Hình 4.2: (a) Sơ đồ cơ học chuẩn đề bài dàn 4 nút – 5 thanh; (b) Bản đồ trường ứng suất kiểu ANSYS & biến dạng phóng đại ×250.",
+        "Hình 4.2: (a) Sơ đồ cơ học chuẩn đề bài dàn 4 nút – 5 thanh; (b) Bản đồ trường ứng suất dọc trục & biến dạng phóng đại ×250.",
         width_cm=16.4,
     )
 
@@ -1447,7 +1448,7 @@ def build_word_report(base_dir: str) -> str:
     # --------------------------------------------------------------------------
     # CHƯƠNG 6: LẬP TRÌNH PYTHON, GIAO DIỆN 2D/3D ANSYS, ĐÓNG GÓI & GITHUB
     # --------------------------------------------------------------------------
-    add_h1(doc, "CHƯƠNG 6. KIẾN TRÚC LẬP TRÌNH PYTHON, GIAO DIỆN MÔ PHỎNG 2D/3D CHUẨN ANSYS VÀ ĐÓNG GÓI ĐA NỀN TẢNG", page_break=True)
+    add_h1(doc, "CHƯƠNG 6. KIẾN TRÚC LẬP TRÌNH PYTHON, GIAO DIỆN MÔ PHỎNG 2D/3D VÀ ĐÓNG GÓI ĐA NỀN TẢNG", page_break=True)
 
     add_h2(doc, "6.1. Cấu trúc mô-đun lõi tính toán Python (python_core/)")
     add_p(
@@ -1494,11 +1495,11 @@ def build_word_report(base_dir: str) -> str:
     return f_int, Kt, N, strain_eng, l_cur''',
     )
 
-    add_h2(doc, "6.2. Thiết kế giao diện mô phỏng 2D/3D chuẩn ANSYS & Đóng gói đa nền tảng")
+    add_h2(doc, "6.2. Thiết kế giao diện mô phỏng 2D/3D trực quan & Đóng gói đa nền tảng")
     add_p(
         doc,
         "Giao diện mô phỏng trực quan của phần mềm được xây dựng đồng bộ với lõi tính toán Python CALFEM theo kiến trúc thích ứng "
-        "(Responsive Adaptive Studio), cho phép nhập trực tiếp mọi thông số đầu vào kèm nút Reset về mặc định, xoay/pan/zoom 3D chuẩn ANSYS, "
+        "(Responsive Adaptive Studio), cho phép nhập trực tiếp mọi thông số đầu vào kèm nút Reset về mặc định, xoay/pan/zoom 3D mượt mà, "
         "phẫu thuật mặt cắt nhạy cao theo vị trí lát cắt ξ, hiển thị số liệu đồng bộ theo trường kết quả và mở hộp thoại chọn nơi lưu báo cáo Word/PDF "
         "(đã kiểm thử tự động khớp < 10⁻⁹ mm với lõi Python trên mọi nền tảng):",
     )
@@ -1507,9 +1508,9 @@ def build_word_report(base_dir: str) -> str:
         ["Nền tảng / Thiết bị đích", "Tệp bàn giao / Địa chỉ chạy", "Tính năng & Tối ưu hóa nổi bật"],
         [
             ["Máy tính Windows 10/11 (bất kỳ máy nào)", "releases/PhanTichPhiTuyen_CALFEM_Windows_x64.exe\n(và thư mục releases/Windows_Portable/)", "File .exe đóng gói chạy trực tiếp không cần cài Python; hỗ trợ chạy kèm lõi Python calfem_engine.exe; hộp thoại Windows Save As xuất báo cáo Word/PDF."],
-            ["Máy tính bảng Xiaomi Pad 8 Pro (11.2\" 3.2K, ARM64)", "releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk", "Bố cục Workbench 3 cột chuẩn ngang như máy trạm ANSYS; hỗ trợ đa cửa sổ HyperOS, xoay 3D mượt 120Hz, chạm phẫu thuật mặt cắt & hộp thoại chọn nơi lưu Word/PDF."],
-            ["Điện thoại Xiaomi 13T Pro (6.67\" ARM64)", "releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk", "Tự động chuyển sang giao diện 5 tab gọn gàng tối ưu một tay; xoay 3D 1 ngón, pan 2 ngón, chụm zoom và xuất Word/PDF trực tiếp trên điện thoại."],
-            ["Chạy trực tiếp trên GitHub (Mọi trình duyệt)", "https://vothanhvang.github.io/PhanTichPhiTuyen_BaiTieuLuan4/\n(mã nguồn: github.com/vothanhvang/PhanTichPhiTuyen_BaiTieuLuan4)", "Triển khai bản dựng Web trực tiếp trên GitHub Pages (thư mục docs/): giảng viên và các bạn trong lớp mở link chạy ngay mô phỏng 2D/3D ANSYS & tải báo cáo Word/PDF!"],
+            ["Máy tính bảng Android (Màn hình lớn, ARM64)", "releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk", "Bố cục 3 cột chuẩn ngang như máy trạm kỹ thuật; hỗ trợ đa cửa sổ, xoay 3D mượt 120Hz, chạm phẫu thuật mặt cắt & hộp thoại chọn nơi lưu Word/PDF."],
+            ["Điện thoại Android (ARM64)", "releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk", "Tự động chuyển sang giao diện 5 tab gọn gàng tối ưu một tay; xoay 3D 1 ngón, pan 2 ngón, chụm zoom và xuất Word/PDF trực tiếp trên điện thoại."],
+            ["Chạy trực tiếp trên GitHub (Mọi trình duyệt)", "https://vothanhvang.github.io/PhanTichPhiTuyen_BaiTieuLuan4/\n(mã nguồn: github.com/vothanhvang/PhanTichPhiTuyen_BaiTieuLuan4)", "Triển khai bản dựng Web trực tiếp trên GitHub Pages (thư mục docs/): giảng viên và các bạn trong lớp mở link chạy ngay mô phỏng 2D/3D & tải báo cáo Word/PDF!"],
         ],
         header_fill="0F766E",
         col_widths_cm=[3.8, 5.6, 7.4],
@@ -1522,7 +1523,7 @@ def build_word_report(base_dir: str) -> str:
         add_figure(
             doc,
             app_shot_3d,
-            "Hình 6.1: Ảnh chụp giao diện thực tế phần mềm Python CALFEM (chế độ 3D chuẩn ANSYS kết hợp Phẫu thuật mặt cắt, nhập thông số trực tiếp & Xuất Word/PDF).",
+            "Hình 6.1: Ảnh chụp giao diện thực tế phần mềm Python CALFEM (chế độ mô phỏng 3D kết hợp Phẫu thuật mặt cắt, nhập thông số trực tiếp & Xuất Word/PDF).",
             width_cm=16.4,
         )
 
@@ -1548,8 +1549,8 @@ def build_word_report(base_dir: str) -> str:
     add_p(
         doc,
         "3. Hệ sinh thái phần mềm tự phát triển dựa trên lõi tính toán Python chú thích đầy đủ tiếng Việt kết hợp giao diện "
-        "mô phỏng 2D/3D chuẩn ANSYS có chức năng khảo sát & phẫu thuật mặt cắt và tự động xuất thuyết minh Word/PDF đã được đóng gói "
-        "thành công sang Windows (.exe), Android (.apk cho Xiaomi Pad 8 Pro & Xiaomi 13T Pro) và triển khai chạy trực tiếp trên GitHub.",
+        "mô phỏng 2D/3D trực quan có chức năng khảo sát & phẫu thuật mặt cắt và tự động xuất thuyết minh Word/PDF đã được đóng gói "
+        "thành công sang Windows (.exe), Android (.apk) và triển khai chạy trực tiếp trên GitHub.",
     )
 
     add_h2(doc, "7.2. Danh mục Tài liệu Tham khảo")

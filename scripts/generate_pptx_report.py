@@ -283,7 +283,7 @@ def build_pptx(base_dir: str) -> str:
     p_desc = tf1.add_paragraph()
     p_desc.space_before = Pt(12)
     rd = p_desc.add_run()
-    rd.text = "Đối chiếu Tuyến tính – Phi tuyến – SAP2000 – Snap-Through  |  Phần mềm Python & Giao diện Mô phỏng 2D/3D chuẩn ANSYS"
+    rd.text = "Đối chiếu Tuyến tính – Phi tuyến – SAP2000 – Snap-Through  |  Phần mềm Python & Giao diện Mô phỏng 2D/3D Trực quan"
     rd.font.name = FONT_MAIN
     rd.font.size = Pt(15)
     rd.font.color.rgb = RGBColor(0x94, 0xA3, 0xB8)
@@ -328,11 +328,11 @@ def build_pptx(base_dir: str) -> str:
     _add_header(s2, "Mục tiêu & Lộ trình Báo cáo Tiểu luận", "Kết hợp tư duy trực quan dễ hiểu tới học sinh cấp 3 và chiều sâu cơ học tính toán hiện đại", 2, TOTAL)
     steps_s2 = [
         ("01 • Cơ sở & Dẫn nguồn", "Hệ thống hóa đầy đủ Bài giảng NSA_1–NSA_6, CALFEM 3.4, Dahlblom (2016), McGuire (2000), Jeffers (2026) & Yang (2025) kèm số trang.", C_NAVY),
-        ("02 • Tóm tắt Toán & Cơ học", "Tóm lược 6 công thức Toán cấp 3 (Py-ta-go, Nhị thức Newton, Tiếp tuyến, Đòn bẩy) và 4 cấp mô hình CALFEM + 6 thuật toán giải.", C_TEAL),
+        ("02 • Tóm tắt Toán & Cơ học", "Tóm lược 7 công thức Toán học (Py-ta-go, Hiệu bình phương, Cosin, Nhị thức Newton, Đạo hàm, Tiếp tuyến, Đòn bẩy) và 4 cấp mô hình CALFEM.", C_TEAL),
         ("03 • Kiểm chứng Sách gốc", "Xác minh lõi Python CALFEM khớp 100% CALFEM exs3.m và khớp từng chữ số 6 vòng lặp Example 9.1 (Dahlblom tr. 261).", C_CYAN),
         ("04 • Giải Bài toán 5 Thanh", "Giải chi tiết từng bước đề bài 1.jpg (P = 208 kN): Tuyến tính vs bar2g bậc 2 vs Corotational UL vs Total Lagrangian NSA_4.", C_NAVY),
         ("05 • 5 Bản chất Vật lý Sâu", "Thanh 1–2 hồi sinh, Đòn bẩy R₁y ≠ R₄y, Mềm hóa (+P) vs Cứng hóa (−P), Độ nhạy 1P→500P và Bật nhảy Snap-Through thực thụ!", C_RED),
-        ("06 • Phần mềm 2D/3D ANSYS", "Demo phần mềm Python 2D/3D có Phẫu thuật mặt cắt, nhập số trực tiếp, xuất Word/PDF, đóng gói .exe/.apk & chạy trên GitHub.", C_AMBER),
+        ("06 • Phần mềm Python 2D/3D", "Demo phần mềm Python 2D/3D có Phẫu thuật mặt cắt, nhập số trực tiếp, xuất Word/PDF, đóng gói .exe/.apk & chạy trên GitHub.", C_AMBER),
     ]
     for idx, (st, sd, col) in enumerate(steps_s2):
         r_i, c_i = divmod(idx, 3)
@@ -393,21 +393,24 @@ def build_pptx(base_dir: str) -> str:
     )
 
     # ==========================================================================
-    # SLIDE 5: TÓM TẮT CÔNG THỨC TOÁN PHỔ THÔNG CẤP 3
+    # SLIDE 5: TÓM TẮT 7 CÔNG THỨC TOÁN HỌC
     # ==========================================================================
     s5 = prs.slides.add_slide(blank)
-    _add_header(s5, "Tóm tắt 6 Công thức Toán học Phổ thông Cấp 3 Áp dụng", "Yêu cầu 4: Hệ thống hóa nền tảng Toán học phổ thông trước khi áp dụng lập trình & giải bài", 5, TOTAL)
-    math_cards = [
-        ("1. Py-ta-go & Hằng đẳng thức lớp 8", "l = √[(Δx₀+Δux)² + (Δy₀+Δuy)²]\nl − L₀ = [Δux(2Δx₀+Δux) + Δuy(2Δy₀+Δuy)] / (l + L₀)\n→ Khử triệt tiêu số học, giữ trọn 16 chữ số chính xác!", C_NAVY),
-        ("2. Lượng giác & Cosin chỉ phương (Lớp 10)", "c = cos θ = Δx / L  ;   s = sin θ = Δy / L\nc² + s² = 1\n→ Chiếu chuyển vị & lực giữa hệ địa phương và tổng thể.", C_TEAL),
-        ("3. Nhị thức Newton (Lớp 11 — NSA_4 Slide 8)", "(1 + d)^(1/2) ≈ 1 + (1/2)·d   (khi |d| ≪ 1)\n→ Dẫn trực tiếp biến dạng hữu hạn Green-Lagrange:\nε_fin = du/dx + ½(du/dx)² + ½(dv/dx)².", C_CYAN),
-        ("4. Đạo hàm & Tích phân cơ bản (Lớp 11–12)", "δ(f²) = 2·f·δf   ;   ∫₀ᴸ (1/L²) dx = 1/L\n→ Lấy biến phân công ảo nội δW_int suy ra thẳng ma trận độ cứng hình học [k_g]!", C_AMBER),
-        ("5. Tiếp tuyến Newton-Raphson (Lớp 11–12)", "u^(k+1) = u^(k) + [Kt(u^(k))]⁻¹ · (λP − f_int(u^(k)))\n→ Giải phương trình phi tuyến bằng lặp tuyến tính hóa với tốc độ hội tụ bậc 2 cực nhanh.", C_RED),
-        ("6. Đòn bẩy Vật lý 10 & Trị riêng Ma trận", "Đòn bẩy biến dạng: R₄y·(2L + u₄x) + P·(L + u₂x) = 0\nTrị riêng ổn định: det(Ke + α_cr·Kg) = 0\n→ Giải thích R₁y ≠ R₄y và tìm tải tới hạn đàn hồi.", C_NAVY),
-    ]
-    for idx, (mt, mb, col) in enumerate(math_cards):
-        ri, ci = divmod(idx, 3)
-        _add_card(s5, 0.45 + ci * 4.22, 1.2 + ri * 2.88, 3.98, 2.66, mt, [mb], accent=col, font_size=11.3)
+    _add_header(s5, "Tóm tắt 7 Công thức Toán học", "Hệ thống hóa đầy đủ 7 nền tảng Toán học trước khi áp dụng lập trình & giải bài toán phi tuyến", 5, TOTAL)
+    _add_table(
+        s5, 0.45, 1.18, 12.43, 5.75,
+        ["TT", "Tên công thức Toán học", "Biểu thức cốt lõi", "Vai trò trực tiếp trong phân tích phi tuyến CALFEM"],
+        [
+            ["1", "Định lý Py-ta-go", "l = √[(Δx₀+Δux)² + (Δy₀+Δuy)²]", "Tính chiều dài thực l của thanh sau biến dạng lớn."],
+            ["2", "Hiệu hai bình phương", "l − L₀ = (l² − L₀²) / (l + L₀)", "Khử triệt tiêu số học khi l ≈ L₀, giữ trọn 16 chữ số chính xác."],
+            ["3", "Lượng giác & Cosin chỉ phương", "c = Δx/L ; s = Δy/L ; c²+s² = 1", "Chiếu chuyển vị và nội lực giữa hệ địa phương và hệ tổng thể."],
+            ["4", "Khai triển nhị thức Newton", "(1 + d)^(1/2) ≈ 1 + d/2 (|d| ≪ 1)", "Dẫn trực tiếp biến dạng hữu hạn Green-Lagrange (NSA_4 Slide 8)."],
+            ["5", "Biến phân & Tích phân xác định", "δ(f²) = 2f·δf ; ∫₀ᴸ(1/L²)dx = 1/L", "Lấy biến phân công ảo nội suy ra ma trận độ cứng hình học [k_g]."],
+            ["6", "Tiếp tuyến Newton-Raphson", "u^(k+1) = u^(k) + [Kt]⁻¹·(λP − f_int)", "Giải hệ phương trình phi tuyến với tốc độ hội tụ bậc 2 cực nhanh."],
+            ["7", "Đòn bẩy biến dạng & Trị riêng", "R₄y = −P·(L+u₂x)/(2L+u₄x) ; det(Ke+αKg)=0", "Giải thích bất đối xứng phản lực R₁y ≠ R₄y và tìm tải tới hạn."],
+        ],
+        head_color=C_NAVY, font_size=10.2,
+    )
 
     # ==========================================================================
     # SLIDE 6: TÓM TẮT 4 CẤP MÔ HÌNH CƠ HỌC CALFEM
@@ -705,7 +708,7 @@ def build_pptx(base_dir: str) -> str:
     # SLIDE 19: PHẪU THUẬT MẶT CẮT NGANG & MỔ DỌC THANH (ANSYS SURGICAL LAB)
     # ==========================================================================
     s19 = prs.slides.add_slide(blank)
-    _add_header(s19, "Chức năng 'Phẫu thuật Mặt cắt' & Khảo sát Nội bộ chuẩn ANSYS", "Cắt mở thanh tại tọa độ ξ bất kỳ — soi ứng suất thớ (η, ζ), hiệu ứng Poisson và khuếch đại P-δ (NSA_4 Slide 27)", 19, TOTAL)
+    _add_header(s19, "Chức năng 'Phẫu thuật Mặt cắt' & Khảo sát Nội bộ", "Cắt mở thanh tại tọa độ ξ bất kỳ — soi ứng suất thớ (η, ζ), hiệu ứng Poisson và khuếch đại P-δ (NSA_4 Slide 27)", 19, TOTAL)
     _add_picture_fit(s19, os.path.join(fig_dir, "fig08_phau_thuat_mat_cat_ANSYS.png"), 0.4, 1.15, 12.53, 4.6)
     _add_card(
         s19, 0.45, 5.85, 12.43, 1.12,
@@ -747,7 +750,7 @@ def build_pptx(base_dir: str) -> str:
     # SLIDE 21: GIAO DIỆN PHẦN MỀM 2D/3D ANSYS & TRIỂN KHAI ĐA NỀN TẢNG
     # ==========================================================================
     s21 = prs.slides.add_slide(blank)
-    _add_header(s21, "Giao diện Phần mềm Python 2D/3D chuẩn ANSYS & Đóng gói Đa nền tảng", "Chạy mượt 120Hz trên Windows (.exe), Android (.apk — Xiaomi Pad 8 Pro & 13T Pro) và GitHub Web!", 21, TOTAL)
+    _add_header(s21, "Giao diện Phần mềm Python 2D/3D Trực quan & Đóng gói Đa nền tảng", "Chạy mượt 120Hz trên Windows (.exe), Android (.apk — Máy tính bảng & Điện thoại) và GitHub Web!", 21, TOTAL)
     app_shot = os.path.join(fig_dir, "fig09_app_python_3d_ansys.png")
     if os.path.exists(app_shot):
         _add_picture_fit(s21, app_shot, 0.45, 1.18, 7.6, 5.7)
@@ -755,11 +758,11 @@ def build_pptx(base_dir: str) -> str:
             s21, 8.25, 1.18, 4.63, 5.7,
             "Tính năng Nổi bật & Đóng gói",
             [
-                "• Chế độ 2D & 3D ANSYS thật: đổ bóng Phong 3D, xoay 360°, Pan, Zoom, nút ISO/XY/XZ/YZ, thang màu cầu vồng & nhãn động.",
+                "• Chế độ mô phỏng 2D & 3D thật: đổ bóng Phong 3D, xoay 360°, Pan, Zoom, nút ISO/XY/XZ/YZ, thang màu cầu vồng & nhãn động.",
                 "• Phẫu thuật 3D cắt mở thanh tại vị trí ξ & soi ứng suất/võng P-δ bên trong mặt cắt ngang.",
                 "• Nhập số trực tiếp + Reset mặc định; xuất thuyết minh Word (.docx) & PDF (.pdf) kèm hộp thoại chọn nơi lưu!",
                 "• Windows (.exe): Chạy trực tiếp trên mọi máy Windows, kết nối live Python calfem_engine.exe.",
-                "• Android (.apk ARM64): Giao diện 3 cột trên Xiaomi Pad 8 Pro & 5 tab cảm ứng trên Xiaomi 13T Pro.",
+                "• Android (.apk ARM64): Bố cục 3 cột thích ứng cho máy tính bảng & 5 tab cảm ứng gọn cho điện thoại.",
                 "• Chạy trực tiếp trên GitHub Pages:\nvothanhvang.github.io/\nPhanTichPhiTuyen_BaiTieuLuan4/",
             ],
             accent=C_NAVY, fill_color=C_LIGHT_BLUE, font_size=10.8,
@@ -767,10 +770,10 @@ def build_pptx(base_dir: str) -> str:
     else:
         _add_card(
             s21, 0.45, 1.25, 6.0, 5.55,
-            "Trải nghiệm Mô phỏng 2D/3D chuẩn ANSYS trong Phần mềm Python",
+            "Trải nghiệm Mô phỏng 2D/3D trong Phần mềm Python",
             [
                 "• Màn hình 2D & 3D thật (Phong Shading + Z-Buffer): dựng khối 3D tiết diện chữ I / Ống tròn / Hộp / Tròn đặc + khớp trụ 3D.",
-                "• Điều khiển y hệt ANSYS: Kéo xoay 3D 360°, kéo phải/2 ngón Pan, cuộn/chụm Zoom, góc nhìn nhanh ISO/XY/XZ/YZ.",
+                "• Điều khiển trực quan: Kéo xoay 3D 360°, kéo phải/2 ngón Pan, cuộn/chụm Zoom, góc nhìn nhanh ISO/XY/XZ/YZ.",
                 "• Chế độ 'Phẫu thuật 3D': mặt cắt xanh lơ cắt xuyên thanh tại ξ, làm trong suốt phần sau để soi mặt cắt & mũi tên nội lực!",
                 "• Tích hợp sẵn xuất Thuyết minh Word (.docx) & Báo cáo PDF (.pdf) kèm hộp thoại chọn nơi lưu trên mọi thiết bị!",
             ],
@@ -781,7 +784,7 @@ def build_pptx(base_dir: str) -> str:
             "Đóng gói 3 Nền tảng & Chạy trực tiếp trên GitHub",
             [
                 "1. Windows x64 (.exe): releases/PhanTichPhiTuyen_CALFEM_Windows_x64.exe — mở là chạy trên mọi PC Windows 10/11, tự kết nối lõi Python calfem_engine.exe!",
-                "2. Android ARM64 (.apk): releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk — bố cục thích ứng 3 cột trên Xiaomi Pad 8 Pro (11.2\") và 5 tab gọn đẹp trên Xiaomi 13T Pro (6.67\").",
+                "2. Android ARM64 (.apk): releases/PhanTichPhiTuyen_CALFEM_Android_arm64.apk — bố cục thích ứng 3 cột cho máy tính bảng và 5 tab gọn đẹp cho điện thoại.",
                 "3. Chạy trực tiếp trên GitHub Pages: https://vothanhvang.github.io/PhanTichPhiTuyen_BaiTieuLuan4/ — Thầy và các bạn trong lớp mở trình duyệt dùng ngay không cần cài đặt!",
             ],
             accent=C_TEAL, fill_color=C_LIGHT_TEAL, font_size=12.0,
@@ -803,7 +806,7 @@ def build_pptx(base_dir: str) -> str:
         [
             "1. Hoàn chỉnh lời giải Phi tuyến Hình học CALFEM 4 cấp (bar2e → bar2g → Corotational UL → Total Lagrangian NSA_4) và 6 thuật toán giải (NSA_6), xác minh tuyệt đối trên Dahlblom Example 9.1 & CALFEM exs3.m.",
             "2. Giải mã tường minh 5 bản chất vật lý cốt lõi (học sinh cấp 3 vẫn hiểu rõ): hồi sinh thanh 1–2, đòn bẩy phản lực biến dạng, mềm hóa (+P) vs cứng hóa (−P), bùng nổ phi tuyến tải lớn và phát hiện bật nhảy Snap-Through thực P_lim = 78,45 MN (thấp hơn 4,41 lần tải trị riêng!).",
-            "3. Xây dựng trọn bộ hệ sinh thái phần mềm Python 2D/3D chuẩn ANSYS có Phẫu thuật mặt cắt & xuất Word/PDF (chọn nơi lưu), đóng gói sẵn .exe Windows, .apk Android (Xiaomi Pad 8 Pro & 13T Pro) và triển khai chạy trực tiếp trên GitHub!",
+            "3. Xây dựng trọn bộ hệ sinh thái phần mềm Python 2D/3D trực quan có Phẫu thuật mặt cắt & xuất Word/PDF (chọn nơi lưu), đóng gói sẵn .exe Windows, .apk Android và triển khai chạy trực tiếp trên GitHub!",
         ],
         accent=C_CYAN, fill_color=RGBColor(0x11, 0x1E, 0x38), font_size=13.0,
     )
@@ -831,7 +834,7 @@ def build_pptx(base_dir: str) -> str:
     pe2.alignment = PP_ALIGN.CENTER
     pe2.space_before = Pt(10)
     re2 = pe2.add_run()
-    re2.text = "Mời Thầy và các bạn trải nghiệm trực tiếp Demo phần mềm 2D/3D ANSYS & Phẫu thuật mặt cắt tại:\nhttps://vothanhvang.github.io/PhanTichPhiTuyen_BaiTieuLuan4/"
+    re2.text = "Mời Thầy và các bạn trải nghiệm trực tiếp Demo phần mềm Python 2D/3D & Phẫu thuật mặt cắt tại:\nhttps://vothanhvang.github.io/PhanTichPhiTuyen_BaiTieuLuan4/"
     re2.font.name = FONT_MAIN
     re2.font.size = Pt(13.5)
     re2.font.color.rgb = RGBColor(0x34, 0xD3, 0x99)

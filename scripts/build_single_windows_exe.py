@@ -131,12 +131,13 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
         GetTempPathW(MAX_PATH, localAppData);
     }
 
-    std::wstring targetDir = std::wstring(localAppData) + L"\\CALFEM_Nonlinear_Studio_v2";
+    const std::string expectedStamp = PAYLOAD_STAMP;
+    std::wstring wStamp(expectedStamp.begin(), expectedStamp.end());
+    std::wstring targetDir = std::wstring(localAppData) + L"\\CALFEM_Python_Studio_" + wStamp;
     CreateDirectoryW(targetDir.c_str(), nullptr);
 
     std::wstring exePath = targetDir + L"\\calfem_nonlinear_truss.exe";
     std::wstring stampPath = targetDir + L"\\.stamp";
-    const std::string expectedStamp = PAYLOAD_STAMP;
 
     bool needExtract = !FileExistsW(exePath) || (ReadTextFile(stampPath) != expectedStamp);
     if (needExtract) {
