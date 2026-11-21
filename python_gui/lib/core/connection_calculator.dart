@@ -288,7 +288,7 @@ class ConnectionCalculator {
       final ang = math.atan2(dy, dx);
       final nKn = result.nForcesN[e] / 1000.0;
       final nAbs = nKn.abs();
-      final dims = SectionDimensions.fromArea(model.sectionShape, model.areas[e]);
+      final dims = model.sectionDimsForElem(e);
       maxMemberH = math.max(maxMemberH, dims.height);
 
       final boltCapTotal = nb * fBolt1Kn;

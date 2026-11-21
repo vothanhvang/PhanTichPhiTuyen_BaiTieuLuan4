@@ -127,5 +127,73 @@ void main() {
     );
     expect(repSpring.checks.any((c) => c.category.contains('lò xo')), isTrue);
     expect(repSpring.allPassed, isTrue);
+
+    // 5. Kiểm chứng đủ 12 tiết diện frame tiêu chuẩn & nhập thông số hình học mặt cắt 3D
+    expect(SectionShape.values.length, 12);
+    for (final shape in SectionShape.values) {
+      // 5a. Quy đổi từ diện tích A = 2001 mm² cho mọi tiết diện
+      final dAuto = SectionDimensions.fromArea(shape, 2001.0);
+      expect(dAuto.areaMm2, closeTo(2001.0, 1.0));
+      expect(dAuto.ix, greaterThan(0.0));
+      expect(dAuto.iy, greaterThan(0.0));
+      expect(dAuto.iMajor, greaterThanOrEqualTo(dAuto.iMinor - 1e-6));
+      expect(dAuto.rGyrationMin, greaterThan(0.0));
+      expect(dAuto.outlinePolygonsMm(shape, includeInnerHole: true), isNotEmpty);
+
+      // 5b. Presets tiêu chuẩn & tính toán ngược vào mô hình dàn + Phẫu thuật mặt cắt
+      final presets = CustomSectionGeometry.presetsFor(shape);
+      expect(presets.length, greaterThanOrEqualTo(4));
+      final customGeom = presets[1].$2;
+      final dCustom = customGeom.toDimensions(shape);
+      expect(dCustom.areaMm2, greaterThan(100.0));
+
+      final mCustom = TrussModelData.create(
+        preset: TrussPreset.assignment5Bar,
+        sectionShape: shape,
+        customSection: customGeom,
+      );
+      expect(mCustom.areas[0], closeTo(dCustom.areaMm2, 1e-6));
+      final resCustom = CalfemNonlinearEngine.solveFullNR(mCustom, isTotalLagrangian: false, nSteps: 6);
+      final resLinCustom = CalfemNonlinearEngine.solveLinear(mCustom);
+      expect(resCustom.converged, isTrue);
+      final pr = CalfemNonlinearEngine.probeMember(
+        model: mCustom,
+        resultNL: resCustom,
+        resultLin: resLinCustom,
+        elemIndex: 3,
+        xi: 0.5,
+        etaNorm: 0.8,
+        imperfectionRatio: 0.002,
+      );
+      expect(pr.pEulerLocalKn, greaterThan(0.0));
+      expect(pr.sectionDims.formatSpec(shape), isNotEmpty);
+    }
+
+    // Kiểm tra công thức giải tích chính xác cho các tiết diện điển hình
+    // I150: H=150, B=75, tf=9, tw=5.5 -> A = 2*75*9 + 132*5.5 = 2076 mm²
+    const i150 = CustomSectionGeometry(heightMm: 150, widthMm: 75, tfMm: 9.0, twMm: 5.5);
+    final dI150 = i150.toDimensions(SectionShape.iSection);
+    expect(dI150.areaMm2, closeTo(2076.0, 1e-6));
+
+    // Chữ nhật đặc 100×200 -> A = 20000 mm², Ix = 100*200^3/12, Iy = 200*100^3/12
+    const rect100x200 = CustomSectionGeometry(heightMm: 200, widthMm: 100, tfMm: 10, twMm: 10);
+    final dRect = rect100x200.toDimensions(SectionShape.solidRect);
+    expect(dRect.areaMm2, closeTo(20000.0, 1e-6));
+    expect(dRect.ix, closeTo(100.0 * 8e6 / 12.0, 1e-3));
+    expect(dRect.iy, closeTo(200.0 * 1e6 / 12.0, 1e-3));
+
+    // Thép góc đôi 2L75×8 (s=10): A = 2*(75*8 + 67*8) = 2272 mm², W_tot = 2*75 + 10 = 160 mm
+    const twoL75 = CustomSectionGeometry(heightMm: 75, widthMm: 75, tfMm: 8.0, twMm: 8.0, gapMm: 10.0);
+    final d2L = twoL75.toDimensions(SectionShape.doubleAngle);
+    expect(d2L.areaMm2, closeTo(2272.0, 1e-6));
+    expect(d2L.width, closeTo(160.0, 1e-6));
+    expect(d2L.outlinePolygonsMm(SectionShape.doubleAngle).length, 2);
+
+    // Thép góc đơn L100×10: I_x == I_y nhưng mô-men quán tính chính cực tiểu I_minor < I_x (do I_xy ≠ 0!)
+    const l100 = CustomSectionGeometry(heightMm: 100, widthMm: 100, tfMm: 10.0, twMm: 10.0);
+    final dL100 = l100.toDimensions(SectionShape.angleL);
+    expect(dL100.areaMm2, closeTo(1900.0, 1e-6));
+    expect(dL100.ix, closeTo(dL100.iy, 1e-3));
+    expect(dL100.iMinor, lessThan(dL100.ix * 0.5));
   });
 }

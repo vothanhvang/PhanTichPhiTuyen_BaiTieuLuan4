@@ -48,8 +48,29 @@ class CrossSectionSpec:
     area_mm2: float = 2001.0
 
     def dimensions(self) -> Dict[str, float]:
-        """Tính kích thước hình học (mm) và mô-men quán tính I (mm^4) từ diện tích A."""
-        A = float(self.area_mm2)
+        """Tính kích thước hình học (mm) và mô-men quán tính I (mm^4) từ diện tích A cho đủ 12 tiết diện frame."""
+        A = max(1.0, float(self.area_mm2))
+
+        def _inertia_from_rects(rects: List[Tuple[float, float, float, float]]) -> Tuple[float, float, float, float, float]:
+            sum_a = sum(max(0.0, x1 - x0) * max(0.0, y1 - y0) for x0, x1, y0, y1 in rects)
+            if sum_a <= 1e-9:
+                return 1.0, 1.0, 1.0, 1.0, 1.0
+            xc = sum(max(0.0, x1 - x0) * max(0.0, y1 - y0) * 0.5 * (x0 + x1) for x0, x1, y0, y1 in rects) / sum_a
+            yc = sum(max(0.0, x1 - x0) * max(0.0, y1 - y0) * 0.5 * (y0 + y1) for x0, x1, y0, y1 in rects) / sum_a
+            ix = iy = ixy = 0.0
+            for x0, x1, y0, y1 in rects:
+                w = max(0.0, x1 - x0)
+                h_r = max(0.0, y1 - y0)
+                a_r = w * h_r
+                dx = 0.5 * (x0 + x1) - xc
+                dy = 0.5 * (y0 + y1) - yc
+                ix += w * (h_r ** 3) / 12.0 + a_r * dx * 0.0 + a_r * (dy ** 2)
+                iy += h_r * (w ** 3) / 12.0 + a_r * (dx ** 2)
+                ixy += a_r * dx * dy
+            avg = 0.5 * (ix + iy)
+            rad = math.hypot(0.5 * (ix - iy), ixy)
+            return sum_a, max(1e-6, ix), max(1e-6, iy), max(1e-6, avg + rad), max(1e-6, avg - rad)
+
         if self.shape == "SOLID_ROD":
             R = math.sqrt(A / math.pi)
             I = 0.25 * math.pi * (R ** 4)
@@ -63,7 +84,6 @@ class CrossSectionSpec:
                 "r_gyration": 0.5 * R,
             }
         if self.shape == "CIRC_TUBE":
-            # A = pi * (R^2 - (0.85*R)^2) = pi * 0.2775 * R^2
             alpha = 0.85
             R = math.sqrt(A / (math.pi * (1.0 - alpha ** 2)))
             r_in = alpha * R
@@ -78,8 +98,19 @@ class CrossSectionSpec:
                 "I_minor": I,
                 "r_gyration": math.sqrt(I / A),
             }
+        if self.shape == "SOLID_RECT":
+            h = math.sqrt(A / 0.65)
+            b = 0.65 * h
+            ix = b * (h ** 3) / 12.0
+            iy = h * (b ** 3) / 12.0
+            return {
+                "height": h,
+                "width": b,
+                "I_major": max(ix, iy),
+                "I_minor": min(ix, iy),
+                "r_gyration": math.sqrt(min(ix, iy) / A),
+            }
         if self.shape == "BOX_SECTION":
-            # A = h^2 - (h - 2*t)^2 với t = 0.12*h => A = (1 - 0.76^2)*h^2 = 0.4224*h^2
             c_in = 0.76
             h = math.sqrt(A / (1.0 - c_in ** 2))
             t = 0.12 * h
@@ -92,8 +123,81 @@ class CrossSectionSpec:
                 "I_minor": I,
                 "r_gyration": math.sqrt(I / A),
             }
+        if self.shape == "CHANNEL_C":
+            coeff = 2.0 * 0.50 * 0.11 + 0.78 * 0.08
+            h = math.sqrt(A / coeff)
+            b, tf, tw = 0.50 * h, 0.11 * h, 0.08 * h
+            _, _, _, i1, i2 = _inertia_from_rects([
+                (-0.5 * b, 0.5 * b, -0.5 * h, -0.5 * h + tf),
+                (-0.5 * b, 0.5 * b, 0.5 * h - tf, 0.5 * h),
+                (-0.5 * b, -0.5 * b + tw, -0.5 * h + tf, 0.5 * h - tf),
+            ])
+            return {"height": h, "width": b, "tf": tf, "tw": tw, "I_major": i1, "I_minor": i2, "r_gyration": math.sqrt(i2 / A)}
+        if self.shape == "ANGLE_L":
+            coeff = 2.0 * 0.12 - 0.12 ** 2
+            h = math.sqrt(A / coeff)
+            t = 0.12 * h
+            _, _, _, i1, i2 = _inertia_from_rects([
+                (-0.5 * h, 0.5 * h, -0.5 * h, -0.5 * h + t),
+                (-0.5 * h, -0.5 * h + t, -0.5 * h + t, 0.5 * h),
+            ])
+            return {"height": h, "width": h, "thickness": t, "I_major": i1, "I_minor": i2, "r_gyration": math.sqrt(i2 / A)}
+        if self.shape == "DOUBLE_ANGLE":
+            coeff = 2.0 * (2.0 * 0.11 - 0.11 ** 2)
+            h = math.sqrt(A / coeff)
+            t, gap = 0.11 * h, max(8.0, 0.14 * h)
+            hg = 0.5 * gap
+            _, _, _, i1, i2 = _inertia_from_rects([
+                (-hg - h, -hg, -0.5 * h, -0.5 * h + t),
+                (-hg - t, -hg, -0.5 * h + t, 0.5 * h),
+                (hg, hg + h, -0.5 * h, -0.5 * h + t),
+                (hg, hg + t, -0.5 * h + t, 0.5 * h),
+            ])
+            return {"height": h, "width": 2.0 * h + gap, "thickness": t, "I_major": i1, "I_minor": i2, "r_gyration": math.sqrt(i2 / A)}
+        if self.shape == "DOUBLE_CHANNEL":
+            coeff = 2.0 * (2.0 * 0.48 * 0.10 + 0.80 * 0.07)
+            h = math.sqrt(A / coeff)
+            b1, tf, tw, gap = 0.48 * h, 0.10 * h, 0.07 * h, max(8.0, 0.12 * h)
+            hg = 0.5 * gap
+            _, _, _, i1, i2 = _inertia_from_rects([
+                (-hg - b1, -hg, -0.5 * h, -0.5 * h + tf),
+                (-hg - b1, -hg, 0.5 * h - tf, 0.5 * h),
+                (-hg - tw, -hg, -0.5 * h + tf, 0.5 * h - tf),
+                (hg, hg + b1, -0.5 * h, -0.5 * h + tf),
+                (hg, hg + b1, 0.5 * h - tf, 0.5 * h),
+                (hg, hg + tw, -0.5 * h + tf, 0.5 * h - tf),
+            ])
+            return {"height": h, "width": 2.0 * b1 + gap, "tf": tf, "tw": tw, "I_major": i1, "I_minor": i2, "r_gyration": math.sqrt(i2 / A)}
+        if self.shape == "TEE_SECTION":
+            coeff = 0.14 + 0.86 * 0.10
+            h = math.sqrt(A / coeff)
+            b, tf, tw = h, 0.14 * h, 0.10 * h
+            _, _, _, i1, i2 = _inertia_from_rects([
+                (-0.5 * b, 0.5 * b, 0.5 * h - tf, 0.5 * h),
+                (-0.5 * tw, 0.5 * tw, -0.5 * h, 0.5 * h - tf),
+            ])
+            return {"height": h, "width": b, "tf": tf, "tw": tw, "I_major": i1, "I_minor": i2, "r_gyration": math.sqrt(i2 / A)}
+        if self.shape == "ZEE_SECTION":
+            coeff = (1.0 + 2.0 * 0.45 - 2.0 * 0.08) * 0.08
+            h = math.sqrt(A / coeff)
+            b1, t = 0.45 * h, 0.08 * h
+            _, _, _, i1, i2 = _inertia_from_rects([
+                (-b1 + 0.5 * t, 0.5 * t, -0.5 * h, -0.5 * h + t),
+                (-0.5 * t, b1 - 0.5 * t, 0.5 * h - t, 0.5 * h),
+                (-0.5 * t, 0.5 * t, -0.5 * h + t, 0.5 * h - t),
+            ])
+            return {"height": h, "width": 2.0 * b1 - t, "thickness": t, "I_major": i1, "I_minor": i2, "r_gyration": math.sqrt(i2 / A)}
+        if self.shape == "CRUCIFORM":
+            coeff = 0.14 + 0.86 * 0.14
+            h = math.sqrt(A / coeff)
+            b, tf, tw = h, 0.14 * h, 0.14 * h
+            _, _, _, i1, i2 = _inertia_from_rects([
+                (-0.5 * tw, 0.5 * tw, -0.5 * h, 0.5 * h),
+                (-0.5 * b, -0.5 * tw, -0.5 * tf, 0.5 * tf),
+                (0.5 * tw, 0.5 * b, -0.5 * tf, 0.5 * tf),
+            ])
+            return {"height": h, "width": b, "tf": tf, "tw": tw, "I_major": i1, "I_minor": i2, "r_gyration": math.sqrt(i2 / A)}
         # Mặc định: I_SECTION (b = 0.85*h, tf = 0.12*h, tw = 0.08*h)
-        # A = 2*(b*tf) + (h - 2*tf)*tw = (2*0.85*0.12 + 0.76*0.08)*h^2 = 0.2648*h^2
         coeff = 2.0 * 0.85 * 0.12 + 0.76 * 0.08
         h = math.sqrt(A / coeff)
         b = 0.85 * h

@@ -138,7 +138,14 @@ class SurgicalDissectionPanel extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Vị trí lát cắt dọc thanh ξ = s/L₀:', style: TextStyle(fontSize: 11, color: textSub)),
+                  Expanded(
+                    child: Text(
+                      'Vị trí lát cắt dọc thanh ξ = s/L₀:',
+                      style: TextStyle(fontSize: 11, color: textSub),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
                   Text(
                     '${probeXi.toStringAsFixed(2)}  (s = ${probe.sMm.toStringAsFixed(1)} mm)',
                     style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF38BDF8)),
@@ -154,7 +161,14 @@ class SurgicalDissectionPanel extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Độ lệch ban đầu e₀/L (hiệu ứng P-δ NSA_4):', style: TextStyle(fontSize: 11, color: textSub)),
+                  Expanded(
+                    child: Text(
+                      'Độ lệch ban đầu e₀/L (hiệu ứng P-δ NSA_4):',
+                      style: TextStyle(fontSize: 11, color: textSub),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
                   Text(
                     imperfectionRatio <= 1e-6 ? '0 (Khớp lý tưởng)' : 'L/${(1.0 / imperfectionRatio).round()}',
                     style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFF59E0B)),
@@ -208,22 +222,49 @@ class SurgicalDissectionPanel extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 4),
+              Builder(builder: (_) {
+                final d = model.sectionDimsForElem(selectedElem);
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: darkMode ? const Color(0xFF0A1426) : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: border),
+                  ),
+                  child: Text(
+                    '${d.formatSpec(model.sectionShape)}  •  A=${d.areaMm2.toStringAsFixed(0)} mm²\n'
+                    'Ix=${(d.ix / 1e4).toStringAsFixed(1)} cm⁴  •  Iy=${(d.iy / 1e4).toStringAsFixed(1)} cm⁴  •  i_min=${d.rGyrationMin.toStringAsFixed(1)} mm',
+                    style: TextStyle(
+                      fontSize: 9.8,
+                      height: 1.35,
+                      fontFamily: 'DejaVuSansMono',
+                      color: darkMode ? const Color(0xFFBAE6FD) : const Color(0xFF0F3D6E),
+                    ),
+                  ),
+                );
+              }),
+              const SizedBox(height: 4),
               Text(
                 'Kéo thanh ξ ở trên để thấy ứng suất & độ võng P-δ thay đổi trực tiếp; chạm tiết diện để soi thớ (η, ζ)',
                 style: TextStyle(fontSize: 9.8, color: textSub),
               ),
               const SizedBox(height: 6),
               SizedBox(
-                height: 232,
+                height: 238,
                 child: LayoutBuilder(
                   builder: (context, cons) {
+                    final d = model.sectionDimsForElem(selectedElem);
                     void pick(Offset local) {
-                      final cx = cons.maxWidth * 0.37;
-                      final cy = cons.maxHeight * 0.50;
-                      final half = math.min(cons.maxWidth * 0.62, cons.maxHeight) * 0.34;
-                      final zN = ((local.dx - cx) / half).clamp(-1.0, 1.0);
-                      final eN = (-(local.dy - cy) / half).clamp(-1.0, 1.0);
+                      final cx = cons.maxWidth * 0.36;
+                      final cy = cons.maxHeight * 0.48;
+                      final halfMax = math.min(cons.maxWidth * 0.58, cons.maxHeight) * 0.34;
+                      final maxDim = math.max(1e-3, math.max(d.height, d.width));
+                      final halfX = math.max(halfMax * 0.24, halfMax * (d.width / maxDim));
+                      final halfY = math.max(halfMax * 0.24, halfMax * (d.height / maxDim));
+                      final zN = ((local.dx - cx) / halfX).clamp(-1.0, 1.0);
+                      final eN = (-(local.dy - cy) / halfY).clamp(-1.0, 1.0);
                       onFiberChanged(eN, zN);
                     }
 
@@ -382,26 +423,22 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
     required this.darkMode,
   });
 
-  bool _inside(double eta, double zeta) {
-    switch (model.sectionShape) {
-      case SectionShape.solidRod:
-        return eta * eta + zeta * zeta <= 1.0;
-      case SectionShape.circTube:
-        final r2 = eta * eta + zeta * zeta;
-        return r2 >= 0.72 && r2 <= 1.0;
-      case SectionShape.boxSection:
-        return eta.abs() >= 0.76 || zeta.abs() >= 0.76;
-      case SectionShape.iSection:
-        return eta.abs() >= 0.76 || zeta.abs() <= 0.14;
-    }
+  bool _inside(double eta, double zeta, SectionDimensions dims) {
+    final xMm = zeta * 0.5 * dims.width;
+    final yMm = eta * 0.5 * dims.height;
+    return dims.containsLocalPoint(model.sectionShape, xMm, yMm);
   }
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Bố trí mặt cắt bên trái (0..68%) và biểu đồ phân bố ứng suất σ(η) động bên phải (70..98%)
+    // Bố trí mặt cắt bên trái (0..68%) theo ĐÚNG tỷ lệ thực H:B và biểu đồ σ(η) động bên phải (70..98%)
+    final dims = model.sectionDimsForElem(elemIndex);
     final cx0 = size.width * 0.36;
-    final cy0 = size.height * 0.50;
-    final half = math.min(size.width * 0.60, size.height) * 0.34;
+    final cy0 = size.height * 0.48;
+    final halfMax = math.min(size.width * 0.58, size.height) * 0.34;
+    final maxDim = math.max(1e-3, math.max(dims.height, dims.width));
+    final halfX = math.max(halfMax * 0.24, halfMax * (dims.width / maxDim));
+    final halfY = math.max(halfMax * 0.24, halfMax * (dims.height / maxDim));
 
     // 1. Tính biên độ ứng suất CỐ ĐỊNH TOÀN THANH tại giữa nhịp (ξ = 0.50)
     //    (Không chuẩn hóa cục bộ theo ξ -> khi kéo ξ từ 0 → 0.5 → 1, màu nhiệt
@@ -431,7 +468,6 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
     double sMax = math.max(pMidTop.sigmaXxMpa, pMidBot.sigmaXxMpa);
     final hasBendingRange = (sMax - sMin).abs() >= 1e-6;
     if (!hasBendingRange) {
-      // Khớp lý tưởng (e0 = 0): dùng biên độ ứng suất toàn hệ dàn để phân biệt Kéo/Nén
       final allS = resultNL.stressMpa;
       sMin = allS.reduce(math.min) - 1.0;
       sMax = allS.reduce(math.max) + 1.0;
@@ -444,15 +480,13 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
     final nForce = resultNL.nForcesN[elemIndex];
     final impStrength = (imperfectionRatio / 0.002).clamp(0.0, 3.0);
     final dafBoost = pCurMid.daf.clamp(0.6, 2.5);
-    // Độ võng hiển thị phóng đại trực quan theo sin(πξ) (tối đa ±16 px tại giữa thanh)
     final bowSign = nForce < 0 ? 1.0 : -1.0;
     final shiftY = (nForce.abs() > 1e-3 && imperfectionRatio > 1e-6)
         ? bowSign * sinXi * (6.5 + 4.5 * impStrength) * math.min(1.6, dafBoost)
         : 0.0;
-    final shiftYClamped = shiftY.clamp(-18.0, 18.0);
+    final shiftYClamped = shiftY.clamp(-16.0, 16.0);
     final cy = cy0 + shiftYClamped;
 
-    // Hệ số Poisson nền + biến thiên cục bộ giữa cánh trên & cánh dưới theo sin(πξ)
     final eps0 = resultNL.strain[elemIndex];
     final basePoisson = 1.0 + (-model.nu * eps0).clamp(-0.0025, 0.0025) * 420.0;
     final anticlasticAmp = (hasBendingRange ? 0.085 * sinXi * (nForce < 0 ? 1.0 : -1.0) * math.min(1.6, impStrength) : 0.0)
@@ -470,34 +504,38 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
       canvas,
       cx0,
       cy0,
-      half,
+      halfX,
+      halfY,
+      dims,
       Paint()
         ..color = (darkMode ? Colors.white : const Color(0xFF475569)).withValues(alpha: 0.30)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.1,
     );
 
-    // 3. Vẽ lưới phần tử màu nhiệt bên trong tiết diện (có độ võng P-δ & biến dạng yên ngựa Poisson theo ξ)
-    const nGrid = 24;
-    final baseCellPx = 2.0 * half / nGrid;
+    // 3. Vẽ lưới phần tử màu nhiệt độ phân giải cao (44×44) theo đúng hình học thực
+    const nGrid = 44;
+    final baseCellW = 2.0 * halfX / nGrid;
+    final baseCellH = 2.0 * halfY / nGrid;
+    final sigmaMid = pCurMid.sigmaXxMpa;
+    final sigmaSlope = pCurTop.sigmaXxMpa - sigmaMid;
+    final sSpan = math.max(1e-9, sMax - sMin);
     for (int iy = 0; iy < nGrid; iy++) {
       final eta = -1.0 + 2.0 * (iy + 0.5) / nGrid;
       final rowScaleX = (basePoisson + anticlasticAmp * eta).clamp(0.78, 1.24);
-      final cellW = baseCellPx * rowScaleX + 0.7;
-      final cellH = baseCellPx * basePoisson + 0.7;
+      final cellW = baseCellW * rowScaleX + 0.7;
+      final cellH = baseCellH * basePoisson + 0.7;
+      final sigRow = sigmaMid + eta * sigmaSlope;
+      final t = ((sigRow - sMin) / sSpan).clamp(0.0, 1.0);
+      final cellPaint = Paint()..color = ansysRainbowColor(t);
+      final py = cy - eta * halfY * basePoisson;
       for (int iz = 0; iz < nGrid; iz++) {
         final zeta = -1.0 + 2.0 * (iz + 0.5) / nGrid;
-        if (!_inside(eta, zeta)) continue;
-        final pCell = CalfemNonlinearEngine.probeMember(
-          model: model, resultNL: resultNL, resultLin: resultLin,
-          elemIndex: elemIndex, xi: xi, etaNorm: eta, zetaNorm: zeta, imperfectionRatio: imperfectionRatio,
-        );
-        final t = ((pCell.sigmaXxMpa - sMin) / math.max(1e-9, sMax - sMin)).clamp(0.0, 1.0);
-        final px = cx0 + zeta * half * rowScaleX;
-        final py = cy - eta * half * basePoisson;
+        if (!_inside(eta, zeta, dims)) continue;
+        final px = cx0 + zeta * halfX * rowScaleX;
         canvas.drawRect(
           Rect.fromCenter(center: Offset(px, py), width: cellW, height: cellH),
-          Paint()..color = ansysRainbowColor(t),
+          cellPaint,
         );
       }
     }
@@ -507,13 +545,32 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
       canvas,
       cx0,
       cy,
-      half,
+      halfX,
+      halfY,
+      dims,
       basePoisson,
       anticlasticAmp,
       Paint()
         ..color = const Color(0xFF00E5FF)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.9,
+        ..strokeWidth = 1.8,
+    );
+
+    // Nhãn kích thước phủ bì H & W ngay trên hình cắt (tách khỏi mũi tên δ(ξ) bên trái)
+    final dimTextCol = darkMode ? const Color(0xFF94A3B8) : const Color(0xFF475569);
+    _paintText(
+      canvas,
+      'H=${dims.height.toStringAsFixed(0)}',
+      Offset(cx0 + halfX * basePoisson + 5, cy - 6),
+      dimTextCol,
+      8.2,
+    );
+    _paintText(
+      canvas,
+      'W=${dims.width.toStringAsFixed(0)} mm',
+      Offset(cx0 - 22, math.min(size.height - 29, cy + halfY * basePoisson + 3)),
+      dimTextCol,
+      8.2,
     );
 
     // Mũi tên chỉ rõ độ võng δ(ξ) giữa tâm ban đầu và tâm sau võng P-δ
@@ -521,22 +578,23 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
       final arrowP = Paint()
         ..color = const Color(0xFFF59E0B)
         ..strokeWidth = 1.8;
-      canvas.drawLine(Offset(cx0 - half - 14, cy0), Offset(cx0 - half - 14, cy), arrowP);
-      canvas.drawCircle(Offset(cx0 - half - 14, cy), 3.0, Paint()..color = const Color(0xFFF59E0B));
+      final ax = math.max(14.0, cx0 - halfX - 10);
+      canvas.drawLine(Offset(ax, cy0), Offset(ax, cy), arrowP);
+      canvas.drawCircle(Offset(ax, cy), 3.0, Paint()..color = const Color(0xFFF59E0B));
       _paintText(
         canvas,
         'δ(ξ)',
-        Offset(cx0 - half - 26, (cy0 + cy) * 0.5 - 6),
+        Offset(math.max(2.0, ax - 18), (cy0 + cy) * 0.5 - 6),
         const Color(0xFFF59E0B),
-        8.5,
+        8.4,
         bold: true,
       );
     }
 
     // Điểm khảo sát thớ đang chọn (η, ζ)
     final selScaleX = (basePoisson + anticlasticAmp * etaNorm).clamp(0.78, 1.24);
-    final selX = cx0 + zetaNorm * half * selScaleX;
-    final selY = cy - etaNorm * half * basePoisson;
+    final selX = cx0 + zetaNorm * halfX * selScaleX;
+    final selY = cy - etaNorm * halfY * basePoisson;
     canvas.drawCircle(Offset(selX, selY), 8.0, Paint()..color = Colors.white.withValues(alpha: 0.3));
     canvas.drawCircle(Offset(selX, selY), 4.5, Paint()..color = const Color(0xFFFFEA00));
     canvas.drawCircle(
@@ -549,10 +607,9 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
     final profLeft = size.width * 0.72;
     final profRight = size.width - 10;
     final profW = math.max(36.0, profRight - profLeft);
-    final topY = cy - half * basePoisson;
-    final botY = cy + half * basePoisson;
+    final topY = cy - halfY * basePoisson;
+    final botY = cy + halfY * basePoisson;
 
-    // Đường chuẩn trục trung hòa của biểu đồ ứng suất
     final baseLineX = profLeft + profW * 0.45;
     canvas.drawLine(
       Offset(baseLineX, topY - 4),
@@ -560,7 +617,6 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
       Paint()..color = (darkMode ? Colors.white : Colors.black).withValues(alpha: 0.25)..strokeWidth = 1.0,
     );
 
-    // Chiều rộng hình thang tỷ lệ trực tiếp với độ chênh ứng suất tại lát cắt ξ so với cực đại ở ξ=0.5!
     final maxDelta = math.max(1e-6, (sMax - sMin) * 0.5);
     double xForSigma(double sig) {
       final normDev = ((sig - pCurMid.sigmaXxMpa) / maxDelta).clamp(-1.0, 1.0);
@@ -584,7 +640,6 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
       Paint()..color = const Color(0xFF38BDF8)..style = PaintingStyle.stroke..strokeWidth = 1.6,
     );
 
-    // Vẽ các mũi tên ứng suất nằm ngang dọc chiều cao tiết diện (thể hiện độ nghiêng mặt phẳng ứng suất!)
     for (int k = 0; k <= 6; k++) {
       final frac = k / 6.0;
       final yy = topY + (botY - topY) * frac;
@@ -617,7 +672,6 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
       bold: true,
     );
 
-    // Chú thích chân hình trực quan theo vị trí cắt ξ
     final deltaBending = (pCurTop.sigmaXxMpa - pCurMid.sigmaXxMpa).abs();
     final stateTxt = nForce > 1e-3
         ? 'Kéo (CO ngang)'
@@ -637,63 +691,75 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
     tp.paint(canvas, pos);
   }
 
-  void _drawDeformedOutline(Canvas canvas, double cx, double cy, double r, double baseScale, double antiAmp, Paint p) {
+  void _drawDeformedOutline(
+    Canvas canvas,
+    double cx,
+    double cy,
+    double halfX,
+    double halfY,
+    SectionDimensions dims,
+    double baseScale,
+    double antiAmp,
+    Paint p,
+  ) {
     Offset pt(double zeta, double eta) {
       final sx = (baseScale + antiAmp * eta).clamp(0.78, 1.24);
-      return Offset(cx + zeta * r * sx, cy - eta * r * baseScale);
+      return Offset(cx + zeta * halfX * sx, cy - eta * halfY * baseScale);
     }
 
-    switch (model.sectionShape) {
-      case SectionShape.solidRod:
-        canvas.drawOval(Rect.fromCenter(center: Offset(cx, cy), width: 2 * r * baseScale, height: 2 * r * baseScale), p);
-        break;
-      case SectionShape.circTube:
-        canvas.drawOval(Rect.fromCenter(center: Offset(cx, cy), width: 2 * r * baseScale, height: 2 * r * baseScale), p);
-        canvas.drawOval(Rect.fromCenter(center: Offset(cx, cy), width: 1.70 * r * baseScale, height: 1.70 * r * baseScale), p);
-        break;
-      case SectionShape.boxSection:
-        final outer = Path()
-          ..moveTo(pt(-1, 1).dx, pt(-1, 1).dy)
-          ..lineTo(pt(1, 1).dx, pt(1, 1).dy)
-          ..lineTo(pt(1, -1).dx, pt(1, -1).dy)
-          ..lineTo(pt(-1, -1).dx, pt(-1, -1).dy)
-          ..close();
-        final inner = Path()
-          ..moveTo(pt(-0.76, 0.76).dx, pt(-0.76, 0.76).dy)
-          ..lineTo(pt(0.76, 0.76).dx, pt(0.76, 0.76).dy)
-          ..lineTo(pt(0.76, -0.76).dx, pt(0.76, -0.76).dy)
-          ..lineTo(pt(-0.76, -0.76).dx, pt(-0.76, -0.76).dy)
-          ..close();
-        canvas.drawPath(outer, p);
-        canvas.drawPath(inner, p);
-        break;
-      case SectionShape.iSection:
-        final pts = [
-          pt(-1.0, 1.0),
-          pt(1.0, 1.0),
-          pt(1.0, 0.76),
-          pt(0.14, 0.76),
-          pt(0.14, -0.76),
-          pt(1.0, -0.76),
-          pt(1.0, -1.0),
-          pt(-1.0, -1.0),
-          pt(-1.0, -0.76),
-          pt(-0.14, -0.76),
-          pt(-0.14, 0.76),
-          pt(-1.0, 0.76),
-        ];
-        final path = Path()..moveTo(pts.first.dx, pts.first.dy);
-        for (int i = 1; i < pts.length; i++) {
-          path.lineTo(pts[i].dx, pts[i].dy);
+    if (model.sectionShape == SectionShape.solidRod) {
+      canvas.drawOval(
+        Rect.fromCenter(center: Offset(cx, cy), width: 2 * halfX * baseScale, height: 2 * halfY * baseScale),
+        p,
+      );
+      return;
+    }
+    if (model.sectionShape == SectionShape.circTube) {
+      canvas.drawOval(
+        Rect.fromCenter(center: Offset(cx, cy), width: 2 * halfX * baseScale, height: 2 * halfY * baseScale),
+        p,
+      );
+      final ratio = dims.radiusOut > 1e-6 ? (dims.radiusIn / dims.radiusOut).clamp(0.05, 0.96) : 0.85;
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(cx, cy),
+          width: 2 * halfX * ratio * baseScale,
+          height: 2 * halfY * ratio * baseScale,
+        ),
+        p,
+      );
+      return;
+    }
+
+    final hwMm = math.max(1e-6, 0.5 * dims.width);
+    final hhMm = math.max(1e-6, 0.5 * dims.height);
+    final polys = dims.outlinePolygonsMm(model.sectionShape, includeInnerHole: true);
+    for (final poly in polys) {
+      if (poly.length < 3) continue;
+      final path = Path();
+      for (int i = 0; i < poly.length; i++) {
+        final o = pt(poly[i][0] / hwMm, poly[i][1] / hhMm);
+        if (i == 0) {
+          path.moveTo(o.dx, o.dy);
+        } else {
+          path.lineTo(o.dx, o.dy);
         }
-        path.close();
-        canvas.drawPath(path, p);
-        break;
+      }
+      path.close();
+      canvas.drawPath(path, p);
     }
   }
 
-  void _drawSectionOutline(Canvas canvas, double cx, double cy, double r, Paint p) {
-    _drawDeformedOutline(canvas, cx, cy, r, 1.0, 0.0, p);
+  void _drawSectionOutline(
+    Canvas canvas,
+    double cx,
+    double cy,
+    double halfX,
+    double halfY,
+    SectionDimensions dims,
+    Paint p,
+  ) {
+    _drawDeformedOutline(canvas, cx, cy, halfX, halfY, dims, 1.0, 0.0, p);
   }
 
   @override

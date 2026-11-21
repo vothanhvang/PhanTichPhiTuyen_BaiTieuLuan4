@@ -94,6 +94,9 @@ class FlutterReportGenerator {
 
     body.write(_docxParagraph('1. THÔNG SỐ ĐẦU VÀO & PHƯƠNG PHÁP PHÂN TÍCH', bold: true, sizeHalfPt: 24, colorHex: '0F3D6E'));
     body.write(_docxParagraph('• Mô hình: ${model.name} — ${model.description}'));
+    final baseSec = model.sectionDimsForElem(0);
+    body.write(_docxParagraph(
+        '• Tiết diện cơ sở: ${model.sectionShape.label} — ${baseSec.formatSpec(model.sectionShape)} (A = ${baseSec.areaMm2.toStringAsFixed(1)} mm², Ix = ${(baseSec.ix / 1e4).toStringAsFixed(2)} cm⁴, Iy = ${(baseSec.iy / 1e4).toStringAsFixed(2)} cm⁴, i_min = ${baseSec.rGyrationMin.toStringAsFixed(2)} mm).'));
     final supSummary = [
       for (int i = 0; i < model.nodeSupports.length; i++)
         'N${i + 1}: ${model.nodeSupports[i].shortLabel}',
@@ -153,7 +156,7 @@ class FlutterReportGenerator {
 
     body.write(_docxParagraph('5. KẾT QUẢ KHẢO SÁT & PHẪU THUẬT MẶT CẮT TẠI ĐIỂM ĐANG CHỌN', bold: true, sizeHalfPt: 24, colorHex: '0F3D6E'));
     body.write(_docxParagraph(
-      '• Vị trí phẫu thuật: Thanh ${probe.memberLabel} tại tọa độ chuẩn hóa ξ = ${probe.xi.toStringAsFixed(2)} (s = ${probe.sMm.toStringAsFixed(1)} mm), thớ (η = ${probe.etaNorm.toStringAsFixed(2)}, ζ = ${probe.zetaNorm.toStringAsFixed(2)}), tiết diện ${model.sectionShape.label}.',
+      '• Vị trí phẫu thuật: Thanh ${probe.memberLabel} tại tọa độ chuẩn hóa ξ = ${probe.xi.toStringAsFixed(2)} (s = ${probe.sMm.toStringAsFixed(1)} mm), thớ (η = ${probe.etaNorm.toStringAsFixed(2)}, ζ = ${probe.zetaNorm.toStringAsFixed(2)}), tiết diện ${model.sectionShape.label} (${probe.sectionDims.formatSpec(model.sectionShape)}).',
     ));
     body.write(_docxParagraph(
       '• Ứng suất pháp σ_xx = ${probe.sigmaXxMpa.toStringAsFixed(4)} MPa (dọc trục ${probe.sigmaAxialMpa.toStringAsFixed(4)} + uốn P-δ ${probe.sigmaBendingMpa.toStringAsFixed(4)}) | von Mises = ${probe.sigmaVonMisesMpa.toStringAsFixed(4)} MPa | τ_max = ${probe.tauMaxMohrMpa.toStringAsFixed(4)} MPa.',
@@ -285,6 +288,7 @@ class FlutterReportGenerator {
           pw.SizedBox(height: 3),
           pw.Text(
             '• Mô hình: ${model.name} — ${model.description}\n'
+            '• Tiết diện cơ sở: ${model.sectionShape.label} — ${model.sectionDimsForElem(0).formatSpec(model.sectionShape)} (A=${model.sectionDimsForElem(0).areaMm2.toStringAsFixed(1)} mm², Ix=${(model.sectionDimsForElem(0).ix / 1e4).toStringAsFixed(1)} cm⁴, Iy=${(model.sectionDimsForElem(0).iy / 1e4).toStringAsFixed(1)} cm⁴)\n'
             '• Liên kết nút: ${[for (int i = 0; i < model.nodeSupports.length; i++) "N${i + 1}: ${model.nodeSupports[i].shortLabel}"].join(" | ")}${model.hasAnySpring ? " (k = ${model.springStiffnessKnMm.toStringAsFixed(1)} kN/mm)" : ""}\n'
             '• Hệ số tải λ = ${loadFactor.toStringAsFixed(2)} | Phương pháp: ${nonlinear.methodName}\n'
             '• Lõi giải: ${nonlinear.engineSource} | Hội tụ: ${nonlinear.converged ? "ĐẠT" : "KHÔNG ĐẠT"} (${nonlinear.totalIterations} vòng lặp).',
@@ -352,7 +356,7 @@ class FlutterReportGenerator {
               style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11, color: navy)),
           pw.SizedBox(height: 3),
           pw.Text(
-            '• Thanh ${probe.memberLabel} tại ξ = ${probe.xi.toStringAsFixed(2)} (s = ${probe.sMm.toStringAsFixed(1)} mm), thớ (η=${probe.etaNorm.toStringAsFixed(2)}, ζ=${probe.zetaNorm.toStringAsFixed(2)}), tiết diện ${model.sectionShape.label}:\n'
+            '• Thanh ${probe.memberLabel} tại ξ = ${probe.xi.toStringAsFixed(2)} (s = ${probe.sMm.toStringAsFixed(1)} mm), thớ (η=${probe.etaNorm.toStringAsFixed(2)}, ζ=${probe.zetaNorm.toStringAsFixed(2)}), tiết diện ${model.sectionShape.label} (${probe.sectionDims.formatSpec(model.sectionShape)}):\n'
             '  - Ứng suất pháp σ_xx = ${probe.sigmaXxMpa.toStringAsFixed(4)} MPa | von Mises = ${probe.sigmaVonMisesMpa.toStringAsFixed(4)} MPa | τ_max = ${probe.tauMaxMohrMpa.toStringAsFixed(4)} MPa.\n'
             '  - Biến dạng dọc ε_xx = ${probe.epsXxMicro.toStringAsFixed(2)} με | Co/nở ngang Poisson = ${probe.epsPoissonMicro.toStringAsFixed(2)} με | Xoay Δθ = ${probe.rotationDeg.toStringAsFixed(5)}°.\n'
             '• Kiểm chứng cân bằng cấu hình biến dạng: ∑Fx = ${nonlinear.sumFxN.toStringAsExponential(2)} N, ∑Fy = ${nonlinear.sumFyN.toStringAsExponential(2)} N, ∑M = ${nonlinear.sumMNmm.toStringAsExponential(2)} N·mm.\n'

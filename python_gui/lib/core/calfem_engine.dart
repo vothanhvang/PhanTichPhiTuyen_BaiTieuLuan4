@@ -16,12 +16,20 @@
 
 import 'dart:math' as math;
 
-/// Kiểu mặt cắt ngang 3D của thanh dàn dùng cho mô phỏng 3D & Phẫu thuật
+/// Kiểu mặt cắt ngang 3D của thanh dàn / khung (đủ 12 tiết diện frame tiêu chuẩn)
 enum SectionShape {
-  iSection('Thép chữ I (H-Beam)', 'I_SECTION'),
-  circTube('Ống thép tròn rỗng', 'CIRC_TUBE'),
-  boxSection('Thép hộp vuông rỗng', 'BOX_SECTION'),
-  solidRod('Thanh thép tròn đặc', 'SOLID_ROD');
+  iSection('Thép chữ I / H (I / H-Beam)', 'I_SECTION'),
+  boxSection('Thép hộp rỗng (RHS / SHS)', 'BOX_SECTION'),
+  circTube('Ống thép tròn rỗng (CHS)', 'CIRC_TUBE'),
+  solidRect('Chữ nhật / Vuông đặc (B×H)', 'SOLID_RECT'),
+  solidRod('Thanh tròn đặc (Circular Rod)', 'SOLID_ROD'),
+  channelC('Thép chữ C / U (Channel)', 'CHANNEL_C'),
+  angleL('Thép góc chữ L (Angle)', 'ANGLE_L'),
+  doubleAngle('Thép góc đôi 2L (Double Angle)', 'DOUBLE_ANGLE'),
+  doubleChannel('Thép chữ C đôi 2C (Double Channel)', 'DOUBLE_CHANNEL'),
+  teeSection('Thép chữ T (Structural Tee)', 'TEE_SECTION'),
+  zeeSection('Thép chữ Z / Xà gồ Z (Z-Section)', 'ZEE_SECTION'),
+  cruciform('Thép chữ thập (+) (Cruciform)', 'CRUCIFORM');
 
   final String label;
   final String code;
@@ -144,86 +152,850 @@ enum ContourField {
   }
 }
 
-/// Kích thước hình học mặt cắt ngang 3D quy đổi từ diện tích A (mm²)
-class SectionDimensions {
-  final double height;
-  final double width;
-  final double tf;
-  final double tw;
-  final double radiusOut;
-  final double radiusIn;
+/// Hình chữ nhật con trong hệ tọa độ tâm khung bao tiết diện (x: ngang, y: đứng, mm)
+class _RectPart {
+  final double x0, x1, y0, y1;
+  const _RectPart(this.x0, this.x1, this.y0, this.y1);
+
+  bool contains(double x, double y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+}
+
+class _InertiaResult {
+  final double area;
+  final double ix;
+  final double iy;
   final double iMajor;
   final double iMinor;
+  const _InertiaResult(this.area, this.ix, this.iy, this.iMajor, this.iMinor);
+
+  static _InertiaResult fromRects(List<_RectPart> rects) {
+    double sumA = 0.0, sumAx = 0.0, sumAy = 0.0;
+    for (final r in rects) {
+      final w = math.max(0.0, r.x1 - r.x0);
+      final h = math.max(0.0, r.y1 - r.y0);
+      final a = w * h;
+      sumA += a;
+      sumAx += a * 0.5 * (r.x0 + r.x1);
+      sumAy += a * 0.5 * (r.y0 + r.y1);
+    }
+    if (sumA <= 1e-9) {
+      return const _InertiaResult(1.0, 1.0, 1.0, 1.0, 1.0);
+    }
+    final xc = sumAx / sumA;
+    final yc = sumAy / sumA;
+    double ix = 0.0, iy = 0.0, ixy = 0.0;
+    for (final r in rects) {
+      final w = math.max(0.0, r.x1 - r.x0);
+      final h = math.max(0.0, r.y1 - r.y0);
+      final a = w * h;
+      final dx = 0.5 * (r.x0 + r.x1) - xc;
+      final dy = 0.5 * (r.y0 + r.y1) - yc;
+      ix += w * h * h * h / 12.0 + a * dy * dy;
+      iy += h * w * w * w / 12.0 + a * dx * dx;
+      ixy += a * dx * dy;
+    }
+    final avg = 0.5 * (ix + iy);
+    final rad = math.sqrt(math.pow(0.5 * (ix - iy), 2) + ixy * ixy);
+    final i1 = math.max(1e-6, avg + rad);
+    final i2 = math.max(1e-6, avg - rad);
+    return _InertiaResult(sumA, math.max(1e-6, ix), math.max(1e-6, iy), i1, i2);
+  }
+}
+
+/// Thông số hình học mặt cắt ngang 3D do người dùng nhập trực tiếp từ giao diện (mm)
+class CustomSectionGeometry {
+  final double heightMm; // Chiều cao H hoặc Đường kính ngoài D (ống / tròn đặc)
+  final double widthMm;  // Bề rộng B (hoặc bề rộng 1 cánh B₁ cho 2L / 2C / Z)
+  final double tfMm;     // Chiều dày cánh t_f hoặc chiều dày thành t
+  final double twMm;     // Chiều dày bụng t_w
+  final double gapMm;    // Khe hở bản mã s cho tiết diện ghép đôi (2L, 2C)
+
+  const CustomSectionGeometry({
+    required this.heightMm,
+    required this.widthMm,
+    required this.tfMm,
+    required this.twMm,
+    this.gapMm = 10.0,
+  });
+
+  CustomSectionGeometry copyWith({
+    double? heightMm,
+    double? widthMm,
+    double? tfMm,
+    double? twMm,
+    double? gapMm,
+  }) {
+    return CustomSectionGeometry(
+      heightMm: heightMm ?? this.heightMm,
+      widthMm: widthMm ?? this.widthMm,
+      tfMm: tfMm ?? this.tfMm,
+      twMm: twMm ?? this.twMm,
+      gapMm: gapMm ?? this.gapMm,
+    );
+  }
+
+  /// Quy đổi kích thước khởi đầu tương ứng với diện tích A hiện tại
+  static CustomSectionGeometry fromArea(SectionShape shape, double areaMm2) {
+    final d = SectionDimensions.fromArea(shape, areaMm2);
+    return CustomSectionGeometry(
+      heightMm: double.parse(d.height.toStringAsFixed(1)),
+      widthMm: double.parse((d.legWidth > 0 ? d.legWidth : d.width).toStringAsFixed(1)),
+      tfMm: double.parse((d.tf > 0 ? d.tf : 6.0).toStringAsFixed(1)),
+      twMm: double.parse((d.tw > 0 ? d.tw : (d.tf > 0 ? d.tf : 6.0)).toStringAsFixed(1)),
+      gapMm: double.parse((d.gap > 0 ? d.gap : 10.0).toStringAsFixed(1)),
+    );
+  }
+
+  /// Nhân đồng dạng kích thước theo hệ số scale (dùng khi thay đổi diện tích cơ sở A)
+  CustomSectionGeometry scaled(double factor) {
+    final f = factor.clamp(0.1, 10.0);
+    return CustomSectionGeometry(
+      heightMm: double.parse((heightMm * f).clamp(10.0, 2000.0).toStringAsFixed(1)),
+      widthMm: double.parse((widthMm * f).clamp(10.0, 2000.0).toStringAsFixed(1)),
+      tfMm: double.parse((tfMm * f).clamp(1.0, 400.0).toStringAsFixed(1)),
+      twMm: double.parse((twMm * f).clamp(1.0, 400.0).toStringAsFixed(1)),
+      gapMm: double.parse((gapMm * f).clamp(0.0, 200.0).toStringAsFixed(1)),
+    );
+  }
+
+  /// Tính đầy đủ đặc trưng hình học mặt cắt (A, Ix, Iy, I1, I2) từ kích thước vừa nhập
+  SectionDimensions toDimensions(SectionShape shape, {double scale = 1.0}) {
+    final s = scale.clamp(0.1, 10.0);
+    final h = (heightMm * s).clamp(8.0, 3000.0);
+    final b = (widthMm * s).clamp(8.0, 3000.0);
+    switch (shape) {
+      case SectionShape.solidRod:
+        final r = 0.5 * h;
+        final area = math.pi * r * r;
+        final inertia = 0.25 * math.pi * math.pow(r, 4).toDouble();
+        return SectionDimensions(
+          height: h,
+          width: h,
+          legWidth: h,
+          radiusOut: r,
+          radiusIn: 0.0,
+          areaMm2: area,
+          ix: inertia,
+          iy: inertia,
+          iMajor: inertia,
+          iMinor: inertia,
+        );
+      case SectionShape.circTube:
+        final r = 0.5 * h;
+        final t = (tfMm * s).clamp(0.8, r * 0.92);
+        final rin = math.max(0.0, r - t);
+        final area = math.pi * (r * r - rin * rin);
+        final inertia = 0.25 * math.pi * (math.pow(r, 4) - math.pow(rin, 4)).toDouble();
+        return SectionDimensions(
+          height: h,
+          width: h,
+          legWidth: h,
+          tf: t,
+          tw: t,
+          radiusOut: r,
+          radiusIn: rin,
+          areaMm2: area,
+          ix: inertia,
+          iy: inertia,
+          iMajor: inertia,
+          iMinor: inertia,
+        );
+      case SectionShape.solidRect:
+        final area = b * h;
+        final ix = b * math.pow(h, 3).toDouble() / 12.0;
+        final iy = h * math.pow(b, 3).toDouble() / 12.0;
+        return SectionDimensions(
+          height: h,
+          width: b,
+          legWidth: b,
+          areaMm2: area,
+          ix: ix,
+          iy: iy,
+          iMajor: math.max(ix, iy),
+          iMinor: math.min(ix, iy),
+        );
+      case SectionShape.boxSection:
+        final t = (tfMm * s).clamp(0.8, 0.46 * math.min(h, b));
+        final props = _InertiaResult.fromRects(
+          SectionDimensions._buildRectParts(shape, h, b, b, t, t, 0.0),
+        );
+        return SectionDimensions(
+          height: h,
+          width: b,
+          legWidth: b,
+          tf: t,
+          tw: t,
+          areaMm2: props.area,
+          ix: props.ix,
+          iy: props.iy,
+          iMajor: props.iMajor,
+          iMinor: props.iMinor,
+        );
+      case SectionShape.iSection:
+        final tf = (tfMm * s).clamp(0.8, 0.44 * h);
+        final tw = (twMm * s).clamp(0.8, 0.90 * b);
+        final props = _InertiaResult.fromRects(
+          SectionDimensions._buildRectParts(shape, h, b, b, tf, tw, 0.0),
+        );
+        return SectionDimensions(
+          height: h,
+          width: b,
+          legWidth: b,
+          tf: tf,
+          tw: tw,
+          areaMm2: props.area,
+          ix: props.ix,
+          iy: props.iy,
+          iMajor: props.iMajor,
+          iMinor: props.iMinor,
+        );
+      case SectionShape.channelC:
+        final tf = (tfMm * s).clamp(0.8, 0.44 * h);
+        final tw = (twMm * s).clamp(0.8, 0.85 * b);
+        final props = _InertiaResult.fromRects(
+          SectionDimensions._buildRectParts(shape, h, b, b, tf, tw, 0.0),
+        );
+        return SectionDimensions(
+          height: h,
+          width: b,
+          legWidth: b,
+          tf: tf,
+          tw: tw,
+          areaMm2: props.area,
+          ix: props.ix,
+          iy: props.iy,
+          iMajor: props.iMajor,
+          iMinor: props.iMinor,
+        );
+      case SectionShape.angleL:
+        final t = (tfMm * s).clamp(0.8, 0.48 * math.min(h, b));
+        final props = _InertiaResult.fromRects(
+          SectionDimensions._buildRectParts(shape, h, b, b, t, t, 0.0),
+        );
+        return SectionDimensions(
+          height: h,
+          width: b,
+          legWidth: b,
+          tf: t,
+          tw: t,
+          areaMm2: props.area,
+          ix: props.ix,
+          iy: props.iy,
+          iMajor: props.iMajor,
+          iMinor: props.iMinor,
+        );
+      case SectionShape.doubleAngle:
+        final t = (tfMm * s).clamp(0.8, 0.46 * math.min(h, b));
+        final gap = (gapMm * s).clamp(0.0, 2.0 * b);
+        final wTot = 2.0 * b + gap;
+        final props = _InertiaResult.fromRects(
+          SectionDimensions._buildRectParts(shape, h, wTot, b, t, t, gap),
+        );
+        return SectionDimensions(
+          height: h,
+          width: wTot,
+          legWidth: b,
+          tf: t,
+          tw: t,
+          gap: gap,
+          areaMm2: props.area,
+          ix: props.ix,
+          iy: props.iy,
+          iMajor: props.iMajor,
+          iMinor: props.iMinor,
+        );
+      case SectionShape.doubleChannel:
+        final tf = (tfMm * s).clamp(0.8, 0.44 * h);
+        final tw = (twMm * s).clamp(0.8, 0.80 * b);
+        final gap = (gapMm * s).clamp(0.0, 2.0 * b);
+        final wTot = 2.0 * b + gap;
+        final props = _InertiaResult.fromRects(
+          SectionDimensions._buildRectParts(shape, h, wTot, b, tf, tw, gap),
+        );
+        return SectionDimensions(
+          height: h,
+          width: wTot,
+          legWidth: b,
+          tf: tf,
+          tw: tw,
+          gap: gap,
+          areaMm2: props.area,
+          ix: props.ix,
+          iy: props.iy,
+          iMajor: props.iMajor,
+          iMinor: props.iMinor,
+        );
+      case SectionShape.teeSection:
+        final tf = (tfMm * s).clamp(0.8, 0.80 * h);
+        final tw = (twMm * s).clamp(0.8, 0.90 * b);
+        final props = _InertiaResult.fromRects(
+          SectionDimensions._buildRectParts(shape, h, b, b, tf, tw, 0.0),
+        );
+        return SectionDimensions(
+          height: h,
+          width: b,
+          legWidth: b,
+          tf: tf,
+          tw: tw,
+          areaMm2: props.area,
+          ix: props.ix,
+          iy: props.iy,
+          iMajor: props.iMajor,
+          iMinor: props.iMinor,
+        );
+      case SectionShape.zeeSection:
+        final t = (tfMm * s).clamp(0.8, 0.42 * math.min(h, b));
+        final wTot = math.max(t + 2.0, 2.0 * b - t);
+        final props = _InertiaResult.fromRects(
+          SectionDimensions._buildRectParts(shape, h, wTot, b, t, t, 0.0),
+        );
+        return SectionDimensions(
+          height: h,
+          width: wTot,
+          legWidth: b,
+          tf: t,
+          tw: t,
+          areaMm2: props.area,
+          ix: props.ix,
+          iy: props.iy,
+          iMajor: props.iMajor,
+          iMinor: props.iMinor,
+        );
+      case SectionShape.cruciform:
+        final tf = (tfMm * s).clamp(0.8, 0.85 * h);
+        final tw = (twMm * s).clamp(0.8, 0.85 * b);
+        final props = _InertiaResult.fromRects(
+          SectionDimensions._buildRectParts(shape, h, b, b, tf, tw, 0.0),
+        );
+        return SectionDimensions(
+          height: h,
+          width: b,
+          legWidth: b,
+          tf: tf,
+          tw: tw,
+          areaMm2: props.area,
+          ix: props.ix,
+          iy: props.iy,
+          iMajor: props.iMajor,
+          iMinor: props.iMinor,
+        );
+    }
+  }
+
+  double computedAreaMm2(SectionShape shape) => toDimensions(shape).areaMm2;
+
+  /// Danh sách thép hình / tiết diện khung tiêu chuẩn chọn nhanh theo từng loại mặt cắt
+  static List<(String, CustomSectionGeometry)> presetsFor(SectionShape shape) {
+    switch (shape) {
+      case SectionShape.iSection:
+        return const [
+          ('I100', CustomSectionGeometry(heightMm: 100, widthMm: 55, tfMm: 7.2, twMm: 4.5)),
+          ('H100', CustomSectionGeometry(heightMm: 100, widthMm: 100, tfMm: 8.0, twMm: 6.0)),
+          ('I150', CustomSectionGeometry(heightMm: 150, widthMm: 75, tfMm: 9.0, twMm: 5.5)),
+          ('H150', CustomSectionGeometry(heightMm: 150, widthMm: 150, tfMm: 10.0, twMm: 7.0)),
+          ('I200', CustomSectionGeometry(heightMm: 200, widthMm: 100, tfMm: 11.0, twMm: 6.0)),
+        ];
+      case SectionShape.boxSection:
+        return const [
+          ('□80×5', CustomSectionGeometry(heightMm: 80, widthMm: 80, tfMm: 5.0, twMm: 5.0)),
+          ('□100×6', CustomSectionGeometry(heightMm: 100, widthMm: 100, tfMm: 6.0, twMm: 6.0)),
+          ('▭120×80×6', CustomSectionGeometry(heightMm: 120, widthMm: 80, tfMm: 6.0, twMm: 6.0)),
+          ('□150×8', CustomSectionGeometry(heightMm: 150, widthMm: 150, tfMm: 8.0, twMm: 8.0)),
+        ];
+      case SectionShape.circTube:
+        return const [
+          ('Ø76×5', CustomSectionGeometry(heightMm: 76, widthMm: 76, tfMm: 5.0, twMm: 5.0)),
+          ('Ø114×6', CustomSectionGeometry(heightMm: 114, widthMm: 114, tfMm: 6.0, twMm: 6.0)),
+          ('Ø140×8', CustomSectionGeometry(heightMm: 140, widthMm: 140, tfMm: 8.0, twMm: 8.0)),
+          ('Ø168×8', CustomSectionGeometry(heightMm: 168, widthMm: 168, tfMm: 8.0, twMm: 8.0)),
+        ];
+      case SectionShape.solidRect:
+        return const [
+          ('40×50', CustomSectionGeometry(heightMm: 50, widthMm: 40, tfMm: 10, twMm: 10)),
+          ('50×80', CustomSectionGeometry(heightMm: 80, widthMm: 50, tfMm: 10, twMm: 10)),
+          ('100×150', CustomSectionGeometry(heightMm: 150, widthMm: 100, tfMm: 10, twMm: 10)),
+          ('200×300', CustomSectionGeometry(heightMm: 300, widthMm: 200, tfMm: 10, twMm: 10)),
+        ];
+      case SectionShape.solidRod:
+        return const [
+          ('Ø36', CustomSectionGeometry(heightMm: 36, widthMm: 36, tfMm: 18, twMm: 18)),
+          ('Ø50', CustomSectionGeometry(heightMm: 50, widthMm: 50, tfMm: 25, twMm: 25)),
+          ('Ø65', CustomSectionGeometry(heightMm: 65, widthMm: 65, tfMm: 32.5, twMm: 32.5)),
+          ('Ø80', CustomSectionGeometry(heightMm: 80, widthMm: 80, tfMm: 40, twMm: 40)),
+        ];
+      case SectionShape.channelC:
+        return const [
+          ('C100', CustomSectionGeometry(heightMm: 100, widthMm: 50, tfMm: 7.5, twMm: 5.0)),
+          ('C120', CustomSectionGeometry(heightMm: 120, widthMm: 55, tfMm: 8.0, twMm: 5.5)),
+          ('C150', CustomSectionGeometry(heightMm: 150, widthMm: 75, tfMm: 10.0, twMm: 6.5)),
+          ('C200', CustomSectionGeometry(heightMm: 200, widthMm: 80, tfMm: 11.0, twMm: 7.5)),
+        ];
+      case SectionShape.angleL:
+        return const [
+          ('L75×6', CustomSectionGeometry(heightMm: 75, widthMm: 75, tfMm: 6.0, twMm: 6.0)),
+          ('L90×8', CustomSectionGeometry(heightMm: 90, widthMm: 90, tfMm: 8.0, twMm: 8.0)),
+          ('L100×10', CustomSectionGeometry(heightMm: 100, widthMm: 100, tfMm: 10.0, twMm: 10.0)),
+          ('L125×80×10', CustomSectionGeometry(heightMm: 125, widthMm: 80, tfMm: 10.0, twMm: 10.0)),
+        ];
+      case SectionShape.doubleAngle:
+        return const [
+          ('2L63×6', CustomSectionGeometry(heightMm: 63, widthMm: 63, tfMm: 6.0, twMm: 6.0, gapMm: 10)),
+          ('2L75×8', CustomSectionGeometry(heightMm: 75, widthMm: 75, tfMm: 8.0, twMm: 8.0, gapMm: 10)),
+          ('2L90×8', CustomSectionGeometry(heightMm: 90, widthMm: 90, tfMm: 8.0, twMm: 8.0, gapMm: 12)),
+          ('2L100×10', CustomSectionGeometry(heightMm: 100, widthMm: 100, tfMm: 10.0, twMm: 10.0, gapMm: 12)),
+        ];
+      case SectionShape.doubleChannel:
+        return const [
+          ('2C100', CustomSectionGeometry(heightMm: 100, widthMm: 50, tfMm: 7.5, twMm: 5.0, gapMm: 10)),
+          ('2C120', CustomSectionGeometry(heightMm: 120, widthMm: 55, tfMm: 8.0, twMm: 5.5, gapMm: 10)),
+          ('2C150', CustomSectionGeometry(heightMm: 150, widthMm: 75, tfMm: 10.0, twMm: 6.5, gapMm: 12)),
+          ('2C200', CustomSectionGeometry(heightMm: 200, widthMm: 80, tfMm: 11.0, twMm: 7.5, gapMm: 14)),
+        ];
+      case SectionShape.teeSection:
+        return const [
+          ('T100×100', CustomSectionGeometry(heightMm: 100, widthMm: 100, tfMm: 10.0, twMm: 8.0)),
+          ('T120×120', CustomSectionGeometry(heightMm: 120, widthMm: 120, tfMm: 11.0, twMm: 8.0)),
+          ('T150×150', CustomSectionGeometry(heightMm: 150, widthMm: 150, tfMm: 12.0, twMm: 9.0)),
+          ('T200×150', CustomSectionGeometry(heightMm: 200, widthMm: 150, tfMm: 14.0, twMm: 10.0)),
+        ];
+      case SectionShape.zeeSection:
+        return const [
+          ('Z120×50×4', CustomSectionGeometry(heightMm: 120, widthMm: 50, tfMm: 4.0, twMm: 4.0)),
+          ('Z150×60×5', CustomSectionGeometry(heightMm: 150, widthMm: 60, tfMm: 5.0, twMm: 5.0)),
+          ('Z180×65×6', CustomSectionGeometry(heightMm: 180, widthMm: 65, tfMm: 6.0, twMm: 6.0)),
+          ('Z200×75×6', CustomSectionGeometry(heightMm: 200, widthMm: 75, tfMm: 6.0, twMm: 6.0)),
+        ];
+      case SectionShape.cruciform:
+        return const [
+          ('+100×8', CustomSectionGeometry(heightMm: 100, widthMm: 100, tfMm: 8.0, twMm: 8.0)),
+          ('+120×10', CustomSectionGeometry(heightMm: 120, widthMm: 120, tfMm: 10.0, twMm: 10.0)),
+          ('+150×12', CustomSectionGeometry(heightMm: 150, widthMm: 150, tfMm: 12.0, twMm: 12.0)),
+          ('+200×14', CustomSectionGeometry(heightMm: 200, widthMm: 200, tfMm: 14.0, twMm: 14.0)),
+        ];
+    }
+  }
+}
+
+/// Kích thước hình học mặt cắt ngang 3D quy đổi từ diện tích A (mm²) hoặc nhập trực tiếp
+class SectionDimensions {
+  final double height;    // Chiều cao phủ bì H (mm)
+  final double width;     // Bề rộng phủ bì W_tot (mm)
+  final double legWidth;  // Bề rộng 1 cánh B (dùng cho 2L, 2C, Z; bằng width với tiết diện đơn)
+  final double tf;        // Chiều dày cánh / thành (mm)
+  final double tw;        // Chiều dày bụng (mm)
+  final double gap;       // Khe hở bản mã s cho tiết diện ghép đôi 2L, 2C (mm)
+  final double radiusOut;
+  final double radiusIn;
+  final double areaMm2;
+  final double ix;        // Mô-men quán tính trục ngang x-x (mm⁴)
+  final double iy;        // Mô-men quán tính trục đứng y-y (mm⁴)
+  final double iMajor;    // Mô-men quán tính chính cực đại I_1 (mm⁴)
+  final double iMinor;    // Mô-men quán tính chính cực tiểu I_2 (mm⁴)
 
   const SectionDimensions({
     required this.height,
     required this.width,
+    double? legWidth,
     this.tf = 0,
     this.tw = 0,
+    this.gap = 0,
     this.radiusOut = 0,
     this.radiusIn = 0,
+    this.areaMm2 = 0,
+    double? ix,
+    double? iy,
     required this.iMajor,
     required this.iMinor,
-  });
+  })  : legWidth = legWidth ?? width,
+        ix = ix ?? iMajor,
+        iy = iy ?? iMinor;
+
+  double get rGyrationMin => areaMm2 > 1e-6 ? math.sqrt(iMinor / areaMm2) : 0.0;
+
+  String formatSpec(SectionShape shape) {
+    final hS = height.toStringAsFixed(1);
+    final wS = width.toStringAsFixed(1);
+    final bS = legWidth.toStringAsFixed(1);
+    final tfS = tf.toStringAsFixed(1);
+    final twS = tw.toStringAsFixed(1);
+    final gS = gap.toStringAsFixed(1);
+    switch (shape) {
+      case SectionShape.iSection:
+        return 'I $hS×$wS×tf=$tfS×tw=$twS mm';
+      case SectionShape.boxSection:
+        return 'Hộp $hS×$wS×t=$tfS mm';
+      case SectionShape.circTube:
+        return 'Ống Ø$hS×t=$tfS mm';
+      case SectionShape.solidRect:
+        return 'Chữ nhật $wS×$hS mm';
+      case SectionShape.solidRod:
+        return 'Tròn đặc Ø$hS mm';
+      case SectionShape.channelC:
+        return 'C $hS×$wS×tf=$tfS×tw=$twS mm';
+      case SectionShape.angleL:
+        return 'L $hS×$wS×t=$tfS mm';
+      case SectionShape.doubleAngle:
+        return '2L $hS×$bS×t=$tfS (s=$gS) mm';
+      case SectionShape.doubleChannel:
+        return '2C $hS×$bS×tf=$tfS×tw=$twS (s=$gS) mm';
+      case SectionShape.teeSection:
+        return 'T $hS×$wS×tf=$tfS×tw=$twS mm';
+      case SectionShape.zeeSection:
+        return 'Z $hS×$bS×t=$tfS mm';
+      case SectionShape.cruciform:
+        return '+ $hS×$wS×tf=$tfS×tw=$twS mm';
+    }
+  }
+
+  /// Danh sách hình chữ nhật vật liệu của mặt cắt (tọa độ tâm khung bao, đơn vị mm)
+  static List<_RectPart> _buildRectParts(
+    SectionShape shape,
+    double h,
+    double wTot,
+    double b1,
+    double tf,
+    double tw,
+    double gap,
+  ) {
+    final hh = 0.5 * h;
+    final hw = 0.5 * wTot;
+    final hg = 0.5 * gap;
+    switch (shape) {
+      case SectionShape.solidRect:
+        return [_RectPart(-hw, hw, -hh, hh)];
+      case SectionShape.boxSection:
+        return [
+          _RectPart(-hw, hw, -hh, -hh + tf),
+          _RectPart(-hw, hw, hh - tf, hh),
+          _RectPart(-hw, -hw + tf, -hh + tf, hh - tf),
+          _RectPart(hw - tf, hw, -hh + tf, hh - tf),
+        ];
+      case SectionShape.iSection:
+        return [
+          _RectPart(-hw, hw, -hh, -hh + tf),
+          _RectPart(-hw, hw, hh - tf, hh),
+          _RectPart(-0.5 * tw, 0.5 * tw, -hh + tf, hh - tf),
+        ];
+      case SectionShape.channelC:
+        return [
+          _RectPart(-hw, hw, -hh, -hh + tf),
+          _RectPart(-hw, hw, hh - tf, hh),
+          _RectPart(-hw, -hw + tw, -hh + tf, hh - tf),
+        ];
+      case SectionShape.angleL:
+        return [
+          _RectPart(-hw, hw, -hh, -hh + tf),
+          _RectPart(-hw, -hw + tf, -hh + tf, hh),
+        ];
+      case SectionShape.doubleAngle:
+        return [
+          _RectPart(-hg - b1, -hg, -hh, -hh + tf),
+          _RectPart(-hg - tf, -hg, -hh + tf, hh),
+          _RectPart(hg, hg + b1, -hh, -hh + tf),
+          _RectPart(hg, hg + tf, -hh + tf, hh),
+        ];
+      case SectionShape.doubleChannel:
+        return [
+          _RectPart(-hg - b1, -hg, -hh, -hh + tf),
+          _RectPart(-hg - b1, -hg, hh - tf, hh),
+          _RectPart(-hg - tw, -hg, -hh + tf, hh - tf),
+          _RectPart(hg, hg + b1, -hh, -hh + tf),
+          _RectPart(hg, hg + b1, hh - tf, hh),
+          _RectPart(hg, hg + tw, -hh + tf, hh - tf),
+        ];
+      case SectionShape.teeSection:
+        return [
+          _RectPart(-hw, hw, hh - tf, hh),
+          _RectPart(-0.5 * tw, 0.5 * tw, -hh, hh - tf),
+        ];
+      case SectionShape.zeeSection:
+        return [
+          _RectPart(-b1 + 0.5 * tf, 0.5 * tf, -hh, -hh + tf),
+          _RectPart(-0.5 * tf, b1 - 0.5 * tf, hh - tf, hh),
+          _RectPart(-0.5 * tf, 0.5 * tf, -hh + tf, hh - tf),
+        ];
+      case SectionShape.cruciform:
+        return [
+          _RectPart(-0.5 * tw, 0.5 * tw, -hh, hh),
+          _RectPart(-hw, -0.5 * tw, -0.5 * tf, 0.5 * tf),
+          _RectPart(0.5 * tw, hw, -0.5 * tf, 0.5 * tf),
+        ];
+      case SectionShape.solidRod:
+      case SectionShape.circTube:
+        return const [];
+    }
+  }
+
+  /// Kiểm tra điểm vật liệu (xMm, yMm) trong mặt cắt ngang (dùng chung cho Phẫu thuật 2D)
+  bool containsLocalPoint(SectionShape shape, double xMm, double yMm) {
+    if (shape == SectionShape.solidRod) {
+      final r = radiusOut > 0 ? radiusOut : 0.5 * height;
+      return xMm * xMm + yMm * yMm <= r * r;
+    }
+    if (shape == SectionShape.circTube) {
+      final r = radiusOut > 0 ? radiusOut : 0.5 * height;
+      final r2 = xMm * xMm + yMm * yMm;
+      return r2 >= radiusIn * radiusIn && r2 <= r * r;
+    }
+    final parts = _buildRectParts(shape, height, width, legWidth, tf, tw, gap);
+    for (final p in parts) {
+      if (p.contains(xMm, yMm)) return true;
+    }
+    return false;
+  }
+
+  /// Danh sách đa giác viền đóng [[xMm, yMm], ...] dùng cho dựng khối 3D & đường biên 2D
+  /// Nếu `includeInnerHole == true`, trả thêm vòng lỗ rỗng bên trong cho thép hộp (phẫu thuật 2D).
+  List<List<List<double>>> outlinePolygonsMm(SectionShape shape, {bool includeInnerHole = false}) {
+    final hh = 0.5 * height;
+    final hw = 0.5 * width;
+    final hg = 0.5 * gap;
+    final b1 = legWidth;
+    switch (shape) {
+      case SectionShape.solidRod:
+      case SectionShape.circTube:
+        const nSeg = 14;
+        final r = radiusOut > 0 ? radiusOut : hh;
+        final outer = [
+          for (int k = 0; k < nSeg; k++)
+            [r * math.cos(2 * math.pi * k / nSeg), r * math.sin(2 * math.pi * k / nSeg)],
+        ];
+        if (includeInnerHole && shape == SectionShape.circTube && radiusIn > 1e-3) {
+          final inner = [
+            for (int k = 0; k < nSeg; k++)
+              [radiusIn * math.cos(2 * math.pi * k / nSeg), radiusIn * math.sin(2 * math.pi * k / nSeg)],
+          ];
+          return [outer, inner];
+        }
+        return [outer];
+      case SectionShape.solidRect:
+        return [
+          [
+            [-hw, -hh],
+            [hw, -hh],
+            [hw, hh],
+            [-hw, hh],
+          ],
+        ];
+      case SectionShape.boxSection:
+        final outer = [
+          [-hw, -hh],
+          [hw, -hh],
+          [hw, hh],
+          [-hw, hh],
+        ];
+        if (includeInnerHole && tf > 0 && width > 2 * tf && height > 2 * tf) {
+          final inner = [
+            [-hw + tf, -hh + tf],
+            [hw - tf, -hh + tf],
+            [hw - tf, hh - tf],
+            [-hw + tf, hh - tf],
+          ];
+          return [outer, inner];
+        }
+        return [outer];
+      case SectionShape.iSection:
+        return [
+          [
+            [-hw, -hh],
+            [hw, -hh],
+            [hw, -hh + tf],
+            [0.5 * tw, -hh + tf],
+            [0.5 * tw, hh - tf],
+            [hw, hh - tf],
+            [hw, hh],
+            [-hw, hh],
+            [-hw, hh - tf],
+            [-0.5 * tw, hh - tf],
+            [-0.5 * tw, -hh + tf],
+            [-hw, -hh + tf],
+          ],
+        ];
+      case SectionShape.channelC:
+        return [
+          [
+            [-hw, -hh],
+            [hw, -hh],
+            [hw, -hh + tf],
+            [-hw + tw, -hh + tf],
+            [-hw + tw, hh - tf],
+            [hw, hh - tf],
+            [hw, hh],
+            [-hw, hh],
+          ],
+        ];
+      case SectionShape.angleL:
+        return [
+          [
+            [-hw, -hh],
+            [hw, -hh],
+            [hw, -hh + tf],
+            [-hw + tf, -hh + tf],
+            [-hw + tf, hh],
+            [-hw, hh],
+          ],
+        ];
+      case SectionShape.doubleAngle:
+        return [
+          [
+            [-hg - b1, -hh],
+            [-hg, -hh],
+            [-hg, hh],
+            [-hg - tf, hh],
+            [-hg - tf, -hh + tf],
+            [-hg - b1, -hh + tf],
+          ],
+          [
+            [hg, -hh],
+            [hg + b1, -hh],
+            [hg + b1, -hh + tf],
+            [hg + tf, -hh + tf],
+            [hg + tf, hh],
+            [hg, hh],
+          ],
+        ];
+      case SectionShape.doubleChannel:
+        return [
+          [
+            [-hg - b1, -hh],
+            [-hg, -hh],
+            [-hg, hh],
+            [-hg - b1, hh],
+            [-hg - b1, hh - tf],
+            [-hg - tw, hh - tf],
+            [-hg - tw, -hh + tf],
+            [-hg - b1, -hh + tf],
+          ],
+          [
+            [hg, -hh],
+            [hg + b1, -hh],
+            [hg + b1, -hh + tf],
+            [hg + tw, -hh + tf],
+            [hg + tw, hh - tf],
+            [hg + b1, hh - tf],
+            [hg + b1, hh],
+            [hg, hh],
+          ],
+        ];
+      case SectionShape.teeSection:
+        return [
+          [
+            [-0.5 * tw, -hh],
+            [0.5 * tw, -hh],
+            [0.5 * tw, hh - tf],
+            [hw, hh - tf],
+            [hw, hh],
+            [-hw, hh],
+            [-hw, hh - tf],
+            [-0.5 * tw, hh - tf],
+          ],
+        ];
+      case SectionShape.zeeSection:
+        return [
+          [
+            [-b1 + 0.5 * tf, -hh],
+            [0.5 * tf, -hh],
+            [0.5 * tf, hh - tf],
+            [b1 - 0.5 * tf, hh - tf],
+            [b1 - 0.5 * tf, hh],
+            [-0.5 * tf, hh],
+            [-0.5 * tf, -hh + tf],
+            [-b1 + 0.5 * tf, -hh + tf],
+          ],
+        ];
+      case SectionShape.cruciform:
+        return [
+          [
+            [-0.5 * tw, -hh],
+            [0.5 * tw, -hh],
+            [0.5 * tw, -0.5 * tf],
+            [hw, -0.5 * tf],
+            [hw, 0.5 * tf],
+            [0.5 * tw, 0.5 * tf],
+            [0.5 * tw, hh],
+            [-0.5 * tw, hh],
+            [-0.5 * tw, 0.5 * tf],
+            [-hw, 0.5 * tf],
+            [-hw, -0.5 * tf],
+            [-0.5 * tw, -0.5 * tf],
+          ],
+        ];
+    }
+  }
 
   static SectionDimensions fromArea(SectionShape shape, double areaMm2) {
     final double a = math.max(1.0, areaMm2);
     switch (shape) {
       case SectionShape.solidRod:
-        final r = math.sqrt(a / math.pi);
-        final inertia = 0.25 * math.pi * math.pow(r, 4);
-        return SectionDimensions(
-          height: 2 * r,
-          width: 2 * r,
-          radiusOut: r,
-          radiusIn: 0,
-          iMajor: inertia.toDouble(),
-          iMinor: inertia.toDouble(),
-        );
+        final d = 2.0 * math.sqrt(a / math.pi);
+        return CustomSectionGeometry(heightMm: d, widthMm: d, tfMm: 0.5 * d, twMm: 0.5 * d)
+            .toDimensions(shape);
       case SectionShape.circTube:
         const alpha = 0.85;
         final r = math.sqrt(a / (math.pi * (1.0 - alpha * alpha)));
-        final rin = alpha * r;
-        final inertia = 0.25 * math.pi * (math.pow(r, 4) - math.pow(rin, 4));
-        return SectionDimensions(
-          height: 2 * r,
-          width: 2 * r,
-          radiusOut: r,
-          radiusIn: rin,
-          tf: r - rin,
-          iMajor: inertia.toDouble(),
-          iMinor: inertia.toDouble(),
-        );
+        return CustomSectionGeometry(heightMm: 2 * r, widthMm: 2 * r, tfMm: (1 - alpha) * r, twMm: (1 - alpha) * r)
+            .toDimensions(shape);
+      case SectionShape.solidRect:
+        final h = math.sqrt(a / 0.65);
+        final b = 0.65 * h;
+        return CustomSectionGeometry(heightMm: h, widthMm: b, tfMm: 0.2 * b, twMm: 0.2 * b)
+            .toDimensions(shape);
       case SectionShape.boxSection:
         const cin = 0.76;
         final h = math.sqrt(a / (1.0 - cin * cin));
         final t = 0.12 * h;
-        final inertia = (math.pow(h, 4) - math.pow(cin * h, 4)) / 12.0;
-        return SectionDimensions(
-          height: h,
-          width: h,
-          tf: t,
-          tw: t,
-          iMajor: inertia.toDouble(),
-          iMinor: inertia.toDouble(),
-        );
+        return CustomSectionGeometry(heightMm: h, widthMm: h, tfMm: t, twMm: t)
+            .toDimensions(shape);
       case SectionShape.iSection:
         const coeff = 2.0 * 0.85 * 0.12 + 0.76 * 0.08;
         final h = math.sqrt(a / coeff);
-        final b = 0.85 * h;
-        final tf = 0.12 * h;
-        final tw = 0.08 * h;
-        final hw = h - 2.0 * tf;
-        final iMaj = (b * math.pow(h, 3) - (b - tw) * math.pow(hw, 3)) / 12.0;
-        final iMin = (2.0 * tf * math.pow(b, 3) + hw * math.pow(tw, 3)) / 12.0;
-        return SectionDimensions(
-          height: h,
-          width: b,
-          tf: tf,
-          tw: tw,
-          iMajor: iMaj.toDouble(),
-          iMinor: iMin.toDouble(),
-        );
+        return CustomSectionGeometry(heightMm: h, widthMm: 0.85 * h, tfMm: 0.12 * h, twMm: 0.08 * h)
+            .toDimensions(shape);
+      case SectionShape.channelC:
+        const coeff = 2.0 * 0.50 * 0.11 + 0.78 * 0.08;
+        final h = math.sqrt(a / coeff);
+        return CustomSectionGeometry(heightMm: h, widthMm: 0.50 * h, tfMm: 0.11 * h, twMm: 0.08 * h)
+            .toDimensions(shape);
+      case SectionShape.angleL:
+        const coeff = 2.0 * 0.12 - 0.12 * 0.12;
+        final h = math.sqrt(a / coeff);
+        return CustomSectionGeometry(heightMm: h, widthMm: h, tfMm: 0.12 * h, twMm: 0.12 * h)
+            .toDimensions(shape);
+      case SectionShape.doubleAngle:
+        const coeff = 2.0 * (2.0 * 0.11 - 0.11 * 0.11);
+        final h = math.sqrt(a / coeff);
+        return CustomSectionGeometry(
+          heightMm: h,
+          widthMm: h,
+          tfMm: 0.11 * h,
+          twMm: 0.11 * h,
+          gapMm: math.max(8.0, 0.14 * h),
+        ).toDimensions(shape);
+      case SectionShape.doubleChannel:
+        const coeff = 2.0 * (2.0 * 0.48 * 0.10 + 0.80 * 0.07);
+        final h = math.sqrt(a / coeff);
+        return CustomSectionGeometry(
+          heightMm: h,
+          widthMm: 0.48 * h,
+          tfMm: 0.10 * h,
+          twMm: 0.07 * h,
+          gapMm: math.max(8.0, 0.12 * h),
+        ).toDimensions(shape);
+      case SectionShape.teeSection:
+        const coeff = 1.0 * 0.14 + 0.86 * 0.10;
+        final h = math.sqrt(a / coeff);
+        return CustomSectionGeometry(heightMm: h, widthMm: h, tfMm: 0.14 * h, twMm: 0.10 * h)
+            .toDimensions(shape);
+      case SectionShape.zeeSection:
+        const coeff = (1.0 + 2.0 * 0.45 - 2.0 * 0.08) * 0.08;
+        final h = math.sqrt(a / coeff);
+        return CustomSectionGeometry(heightMm: h, widthMm: 0.45 * h, tfMm: 0.08 * h, twMm: 0.08 * h)
+            .toDimensions(shape);
+      case SectionShape.cruciform:
+        const coeff = 0.14 + 0.86 * 0.14;
+        final h = math.sqrt(a / coeff);
+        return CustomSectionGeometry(heightMm: h, widthMm: h, tfMm: 0.14 * h, twMm: 0.14 * h)
+            .toDimensions(shape);
     }
   }
 }
@@ -246,6 +1018,7 @@ class TrussModelData {
   final List<String> memberLabels;
   final List<String> nodeLabels;
   final SectionShape sectionShape;
+  final CustomSectionGeometry? customSection; // Thông số hình học mặt cắt 3D nhập từ giao diện
   final double baseL;
   final double baseA;
   final double basePKn;
@@ -267,10 +1040,23 @@ class TrussModelData {
     required this.memberLabels,
     required this.nodeLabels,
     required this.sectionShape,
+    this.customSection,
     required this.baseL,
     required this.baseA,
     required this.basePKn,
   });
+
+  /// Trả về kích thước mặt cắt thực tế của thanh `e` (tôn trọng thông số người dùng nhập nếu có!)
+  SectionDimensions sectionDimsForElem(int e) {
+    final idx = e.clamp(0, nElems - 1);
+    final aElem = areas[idx];
+    if (customSection != null) {
+      final aBase = math.max(1.0, customSection!.computedAreaMm2(sectionShape));
+      final linearScale = math.sqrt(math.max(0.05, aElem / aBase));
+      return customSection!.toDimensions(sectionShape, scale: linearScale);
+    }
+    return SectionDimensions.fromArea(sectionShape, aElem);
+  }
 
   /// Trả về hướng bố trí thực tế (bottom / top / left / right) của liên kết tại nút `i`
   SupportDirection resolvedDirectionFor(int i) {
@@ -387,6 +1173,7 @@ class TrussModelData {
     double pKn = 208.0,
     double nu = 0.30,
     SectionShape sectionShape = SectionShape.iSection,
+    CustomSectionGeometry? customSection,
     List<NodeSupportType>? customSupports,
     List<SupportDirection>? customDirections,
     double springStiffnessKnMm = 500.0,
@@ -399,6 +1186,7 @@ class TrussModelData {
         ? List<SupportDirection>.from(customDirections)
         : List<SupportDirection>.filled(defSup.length, SupportDirection.auto);
     final fixed = fixedDofsFromSupports(supports);
+    final effectiveA = customSection != null ? customSection.computedAreaMm2(sectionShape) : aMm2;
 
     switch (preset) {
       case TrussPreset.dahlblomEx91:
@@ -426,6 +1214,7 @@ class TrussModelData {
           memberLabels: const ['1-3 (AB)', '2-3 (CB)'],
           nodeLabels: _buildNodeLabels(const ['Nút 1 (A)', 'Nút 2 (C)', 'Nút 3 (B)'], supports),
           sectionShape: sectionShape,
+          customSection: customSection,
           baseL: 1600.0,
           baseA: 2000.0,
           basePKn: 10000.0,
@@ -457,6 +1246,7 @@ class TrussModelData {
           memberLabels: const ['1-3', '3-4', '2-3'],
           nodeLabels: _buildNodeLabels(const ['Nút 1', 'Nút 2', 'Nút 3', 'Nút 4'], supports),
           sectionShape: sectionShape,
+          customSection: customSection,
           baseL: 1600.0,
           baseA: 600.0,
           basePKn: 80.0,
@@ -474,7 +1264,7 @@ class TrussModelData {
             [1, 2],
             [2, 3],
           ],
-          areas: [aMm2, aMm2],
+          areas: [effectiveA, effectiveA],
           E: eMpa,
           nu: nu,
           fyRef: 250.0,
@@ -486,17 +1276,18 @@ class TrussModelData {
           memberLabels: const ['1-2', '2-3'],
           nodeLabels: _buildNodeLabels(const ['Nút 1', 'Nút 2', 'Nút 3'], supports),
           sectionShape: sectionShape,
+          customSection: customSection,
           baseL: lMm,
-          baseA: aMm2,
+          baseA: effectiveA,
           basePKn: pKn,
         );
       case TrussPreset.assignment5Bar:
-        final diagA = 2.0 * math.sqrt(2.0) * aMm2;
+        final diagA = 2.0 * math.sqrt(2.0) * effectiveA;
         return TrussModelData(
           name: 'Dàn 4 nút – 5 thanh (Đề bài 1.jpg)',
           description:
               'L=${lMm.toStringAsFixed(0)} mm, E=${(eMpa / 1000).toStringAsFixed(0)} GPa, '
-              'A=${aMm2.toStringAsFixed(0)} mm², P=${pKn.toStringAsFixed(1)} kN hướng lên (+Y)',
+              'A=${effectiveA.toStringAsFixed(0)} mm², P=${pKn.toStringAsFixed(1)} kN hướng lên (+Y)',
           coords: [
             [0.0, 0.0],
             [lMm, 0.0],
@@ -510,7 +1301,7 @@ class TrussModelData {
             [3, 2],
             [2, 4],
           ],
-          areas: [aMm2, aMm2, aMm2, diagA, diagA],
+          areas: [effectiveA, effectiveA, effectiveA, diagA, diagA],
           E: eMpa,
           nu: nu,
           fyRef: 250.0,
@@ -522,8 +1313,9 @@ class TrussModelData {
           memberLabels: const ['1-2', '1-3', '3-4', '3-2', '2-4'],
           nodeLabels: _buildNodeLabels(const ['Nút 1', 'Nút 2', 'Nút 3', 'Nút 4'], supports),
           sectionShape: sectionShape,
+          customSection: customSection,
           baseL: lMm,
-          baseA: aMm2,
+          baseA: effectiveA,
           basePKn: pKn,
         );
     }
@@ -1716,7 +2508,7 @@ class CalfemNonlinearEngine {
 
     final nForce = resultNL.nForcesN[e];
     final sigmaAxial = resultNL.stressMpa[e];
-    final dims = SectionDimensions.fromArea(model.sectionShape, model.areas[e]);
+    final dims = model.sectionDimsForElem(e);
     final pEuler = (math.pi * math.pi) * model.E * dims.iMinor / (l0 * l0);
 
     final yFiber = 0.5 * dims.height * eta;
@@ -1733,7 +2525,7 @@ class CalfemNonlinearEngine {
       }
       final mSec = nForce.abs() * e0 * daf * math.sin(math.pi * xiC);
       final signB = nForce < 0 ? -1.0 : 1.0;
-      sigmaBend = signB * (mSec * yFiber / math.max(1e-9, dims.iMajor));
+      sigmaBend = signB * (mSec * yFiber / math.max(1e-9, dims.ix));
     }
 
     final sigmaXx = sigmaAxial + sigmaBend;

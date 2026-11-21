@@ -656,8 +656,6 @@ class _Ansys2DPainter extends CustomPainter {
         model.coords[i][1] + deformScale * result.uMm[2 * i + 1],
       );
       final sup = i < model.nodeSupports.length ? model.nodeSupports[i] : NodeSupportType.free;
-      final isTop = model.coords[i][1] > midY + 1e-3;
-      final isRight = model.coords[i][0] > midX + 1e-3;
 
       final pts = <Offset>[];
       final dirs = <Offset>[];

@@ -504,45 +504,28 @@ class _Ansys3DPainter extends CustomPainter {
     this.connectionType = ConnectionDetailType.boltedGusset,
   });
 
-  /// Tạo danh sách điểm viền 2D (v, w) của mặt cắt ngang 3D theo hình dạng tiết diện
-  List<Offset> _crossSectionPolygon(SectionShape shape, double h, double b) {
-    // Phóng đại trực quan nhẹ chiều dày thanh để nhìn rõ mặt cắt 3D kiểu ANSYS Solid Beam
-    final hh = h * 0.95;
-    final bb = b * 0.95;
-    switch (shape) {
-      case SectionShape.solidRod:
-      case SectionShape.circTube:
-        const nSeg = 10;
-        final r = 0.5 * hh;
-        return [
-          for (int k = 0; k < nSeg; k++)
-            Offset(r * math.cos(2 * math.pi * k / nSeg), r * math.sin(2 * math.pi * k / nSeg)),
-        ];
-      case SectionShape.boxSection:
-        return [
-          Offset(-0.5 * hh, -0.5 * bb),
-          Offset(0.5 * hh, -0.5 * bb),
-          Offset(0.5 * hh, 0.5 * bb),
-          Offset(-0.5 * hh, 0.5 * bb),
-        ];
-      case SectionShape.iSection:
-        final tf = 0.16 * hh;
-        final tw = 0.14 * bb;
-        return [
-          Offset(-0.5 * hh, -0.5 * bb),
-          Offset(-0.5 * hh, 0.5 * bb),
-          Offset(-0.5 * hh + tf, 0.5 * bb),
-          Offset(-0.5 * hh + tf, 0.5 * tw),
-          Offset(0.5 * hh - tf, 0.5 * tw),
-          Offset(0.5 * hh - tf, 0.5 * bb),
-          Offset(0.5 * hh, 0.5 * bb),
-          Offset(0.5 * hh, -0.5 * bb),
-          Offset(0.5 * hh - tf, -0.5 * bb),
-          Offset(0.5 * hh - tf, -0.5 * tw),
-          Offset(-0.5 * hh + tf, -0.5 * tw),
-          Offset(-0.5 * hh + tf, -0.5 * bb),
-        ];
-    }
+  /// Tạo đa giác tròn 2D (v, w) dùng cho chốt khớp, con lăn 3D
+  List<Offset> _circleProfile(double diameter, {int nSeg = 12}) {
+    final r = 0.5 * diameter * 0.95;
+    return [
+      for (int k = 0; k < nSeg; k++)
+        Offset(r * math.cos(2 * math.pi * k / nSeg), r * math.sin(2 * math.pi * k / nSeg)),
+    ];
+  }
+
+  /// Tạo danh sách đa giác viền 2D (v, w) của mặt cắt ngang 3D theo đúng kích thước thực (H, B, tf, tw, s)
+  /// Trả về 2 đa giác tách rời (kèm khe hở bản mã) cho tiết diện ghép đôi 2L và 2C!
+  List<List<Offset>> _crossSectionPolygons(SectionShape shape, SectionDimensions dims) {
+    final maxDim = math.max(dims.height, dims.width);
+    // Giữ nguyên tỷ lệ hình học thực (H:B:tf:tw:s), chỉ giới hạn trần hiển thị nếu nhập quá lớn so với nhịp dàn
+    final visScale = maxDim > 260.0 ? (260.0 / maxDim) * 0.95 : 0.95;
+    final polysMm = dims.outlinePolygonsMm(shape, includeInnerHole: false);
+    return [
+      for (final poly in polysMm)
+        [
+          for (final pt in poly) Offset(pt[1] * visScale, pt[0] * visScale),
+        ],
+    ];
   }
 
   void _addPrismFaces(
@@ -671,8 +654,8 @@ class _Ansys3DPainter extends CustomPainter {
       final p2 = nodePos3D[nj];
       final tVal = ((valueAt3D(e, 0.5) - minVal) / span).clamp(0.0, 1.0);
       final col = ansysRainbowColor(tVal);
-      final dims = SectionDimensions.fromArea(model.sectionShape, model.areas[e]);
-      final profile = _crossSectionPolygon(model.sectionShape, dims.height, dims.width);
+      final dims = model.sectionDimsForElem(e);
+      final profiles = _crossSectionPolygons(model.sectionShape, dims);
 
       if (surgicalMode && e == selectedElem) {
         // PHẪU THUẬT 3D: Cắt thanh tại vị trí ξ!
@@ -680,33 +663,37 @@ class _Ansys3DPainter extends CustomPainter {
         // Phần sau [ξ, 1]: cắt rời làm mờ trong suốt + Gradient liên tục!
         final pCut = p1 + (p2 - p1) * probeXi;
         if (probeXi > 0.03) {
-          _addPrismFaces(
-            faces,
-            p1,
-            pCut,
-            profile,
-            col,
-            alpha: 1.0,
-            highlightEndCap: true,
-            gradientColors: buildGradColors(e, 0.0, probeXi),
-          );
+          for (final profile in profiles) {
+            _addPrismFaces(
+              faces,
+              p1,
+              pCut,
+              profile,
+              col,
+              alpha: 1.0,
+              highlightEndCap: true,
+              gradientColors: buildGradColors(e, 0.0, probeXi),
+            );
+          }
         }
         if (probeXi < 0.97) {
-          _addPrismFaces(
-            faces,
-            pCut,
-            p2,
-            profile,
-            col,
-            alpha: 0.26,
-            gradientColors: buildGradColors(e, probeXi, 1.0),
-          );
+          for (final profile in profiles) {
+            _addPrismFaces(
+              faces,
+              pCut,
+              p2,
+              profile,
+              col,
+              alpha: 0.26,
+              gradientColors: buildGradColors(e, probeXi, 1.0),
+            );
+          }
         }
         // Mặt phẳng dao cắt trong suốt màu xanh lơ vuông góc trục thanh
         final axis = (p2 - p1).normalized();
         final vAxis = const _Vec3(0, 0, 1).cross(axis).normalized();
         final wAxis = const _Vec3(0, 0, 1);
-        final sz = dims.height * 1.45;
+        final sz = math.min(280.0, math.max(dims.height, dims.width)) * 1.15;
         final planeVerts = [
           pCut - vAxis * sz - wAxis * sz,
           pCut + vAxis * sz - wAxis * sz,
@@ -722,15 +709,17 @@ class _Ansys3DPainter extends CustomPainter {
           edgeColor: const Color(0xFF00E5FF),
         ));
       } else {
-        _addPrismFaces(
-          faces,
-          p1,
-          p2,
-          profile,
-          col,
-          alpha: 0.96,
-          gradientColors: buildGradColors(e, 0.0, 1.0),
-        );
+        for (final profile in profiles) {
+          _addPrismFaces(
+            faces,
+            p1,
+            p2,
+            profile,
+            col,
+            alpha: 0.96,
+            gradientColors: buildGradColors(e, 0.0, 1.0),
+          );
+        }
       }
     }
 
@@ -738,7 +727,7 @@ class _Ansys3DPainter extends CustomPainter {
     if (connectionMode == ConnectionDisplayMode.fabrication) {
       _addFabricationConnections3D(faces, nodePos3D);
     } else {
-      final pinProfile = _crossSectionPolygon(SectionShape.solidRod, 68, 68);
+      final pinProfile = _circleProfile(68.0);
       for (int i = 0; i < model.nNodes; i++) {
         final p = nodePos3D[i];
         Color pinColor = const Color(0xFFCBD5E1);
@@ -1011,8 +1000,8 @@ class _Ansys3DPainter extends CustomPainter {
       for (int k = 0; k < 6; k++)
         Offset(13.0 * math.cos(k * math.pi / 3.0), 13.0 * math.sin(k * math.pi / 3.0)),
     ];
-    final rollerProfile = _crossSectionPolygon(SectionShape.solidRod, 44.0, 44.0);
-    final clevisPinProfile = _crossSectionPolygon(SectionShape.solidRod, 64.0, 64.0);
+    final rollerProfile = _circleProfile(44.0);
+    final clevisPinProfile = _circleProfile(64.0);
 
     for (int i = 0; i < model.nNodes; i++) {
       final p = nodePos3D[i];
@@ -1031,7 +1020,7 @@ class _Ansys3DPainter extends CustomPainter {
         final dir3 = (nodePos3D[other] - p).normalized();
         final dir2 = Offset(dir3.x, dir3.y);
         final perp2 = Offset(-dir2.dy, dir2.dx);
-        final dims = SectionDimensions.fromArea(model.sectionShape, model.areas[e]);
+        final dims = model.sectionDimsForElem(e);
         final hw = (dims.height * 0.55).clamp(45.0, 92.0);
         maxHalfW = math.max(maxHalfW, hw);
 
