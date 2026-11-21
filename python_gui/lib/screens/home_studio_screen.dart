@@ -37,9 +37,14 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
   // Tham số mô hình có thể tùy biến trực tiếp
   TrussPreset _preset = TrussPreset.assignment5Bar;
   SolverMethod _method = SolverMethod.corotationalNR;
-  SectionShape _sectionShape = SectionShape.iSection;
-  bool _useCustomSection = false;
-  CustomSectionGeometry _customSection = CustomSectionGeometry.fromArea(SectionShape.iSection, 2001.0);
+  // Thiết lập tiết diện riêng cho từng thanh (chỉnh tại thanh đang đặt Mặt cắt phẫu thuật!)
+  List<ElementSectionConfig> _elemSections = List<ElementSectionConfig>.generate(
+    5,
+    (_) => const ElementSectionConfig(shape: SectionShape.iSection),
+  );
+  // Tọa độ nút tùy chỉnh để điều chỉnh khoảng cách / chiều dài từng thanh (null = theo chiều dài L cơ sở)
+  List<List<double>>? _customCoords;
+  bool _editNodeCoordsMode = false;
   ContourField _contourField = ContourField.axialStress;
 
   double _lMm = 1000.0;
@@ -124,21 +129,30 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
     if (_supportDirections.length != defSup.length) {
       _supportDirections = List<SupportDirection>.filled(defSup.length, SupportDirection.auto);
     }
+    final nE = TrussModelData.defaultElemCountFor(_preset);
+    if (_elemSections.length != nE) {
+      _elemSections = List<ElementSectionConfig>.generate(
+        nE,
+        (_) => const ElementSectionConfig(shape: SectionShape.iSection),
+      );
+    }
+    if (_customCoords != null && _customCoords!.length != defSup.length) {
+      _customCoords = null;
+    }
+    _selectedElem = _selectedElem.clamp(0, nE - 1);
     _model = TrussModelData.create(
       preset: _preset,
       lMm: _lMm,
       eMpa: _eGpa * 1000.0,
       aMm2: _aMm2,
       pKn: _pKn,
-      sectionShape: _sectionShape,
-      customSection: _useCustomSection ? _customSection : null,
+      sectionShape: _elemSections[_selectedElem].shape,
+      elementSections: _elemSections,
+      customCoords: _customCoords,
       customSupports: _nodeSupports,
       customDirections: _supportDirections,
       springStiffnessKnMm: _springStiffnessKnMm,
     );
-    if (_selectedElem >= _model.nElems) {
-      _selectedElem = 0;
-    }
     _resLinear = CalfemNonlinearEngine.solveLinear(_model, loadFactor: _loadFactor);
     _resBar2g = CalfemNonlinearEngine.solveBar2gSecondOrder(_model, loadFactor: _loadFactor);
     _resCorot = CalfemNonlinearEngine.solveFullNR(_model,
@@ -839,9 +853,12 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
     _updateAndSolve(() {
       _preset = TrussPreset.assignment5Bar;
       _method = SolverMethod.corotationalNR;
-      _sectionShape = SectionShape.iSection;
-      _useCustomSection = false;
-      _customSection = CustomSectionGeometry.fromArea(SectionShape.iSection, 2001.0);
+      _elemSections = List<ElementSectionConfig>.generate(
+        5,
+        (_) => const ElementSectionConfig(shape: SectionShape.iSection),
+      );
+      _customCoords = null;
+      _editNodeCoordsMode = false;
       _contourField = ContourField.axialStress;
       _lMm = 1000.0;
       _eGpa = 200.0;
@@ -893,8 +910,8 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('1. Mô hình & Thuật toán CALFEM',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5, color: Color(0xFF38BDF8))),
+              const Text('1. Mô hình, Thuật toán & Mặt cắt từng Thanh',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.4, color: Color(0xFF38BDF8))),
               const SizedBox(height: 6),
               DropdownButtonFormField<TrussPreset>(
                 key: ValueKey('preset_${_preset.code}'),
@@ -915,6 +932,13 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                     final defSup = TrussModelData.defaultSupportsFor(v);
                     _nodeSupports = List<NodeSupportType>.from(defSup);
                     _supportDirections = List<SupportDirection>.filled(defSup.length, SupportDirection.auto);
+                    final nE = TrussModelData.defaultElemCountFor(v);
+                    _elemSections = List<ElementSectionConfig>.generate(
+                      nE,
+                      (_) => const ElementSectionConfig(shape: SectionShape.iSection),
+                    );
+                    _customCoords = null;
+                    _selectedElem = _selectedElem.clamp(0, nE - 1);
                     _loadFactor = 1.0;
                     _deformScale = v == TrussPreset.dahlblomEx91 ? 3.0 : (v == TrussPreset.vonMisesArch ? 5.0 : 180.0);
                   });
@@ -935,28 +959,138 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                 },
               ),
               const SizedBox(height: 8),
-              DropdownButtonFormField<SectionShape>(
-                key: ValueKey('sec_${_sectionShape.code}'),
-                initialValue: _sectionShape,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Mặt cắt 3D để Phẫu thuật', isDense: true, border: OutlineInputBorder()),
-                items: [
-                  for (final s in SectionShape.values)
-                    DropdownMenuItem(
-                      value: s,
-                      child: Text(s.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
+              // Thanh chọn nhanh vị trí Mặt cắt phẫu thuật: chọn thanh nào thì chỉnh tiết diện thanh đó!
+              Builder(builder: (_) {
+                final activeIdx = _selectedElem.clamp(0, _model.nElems - 1);
+                final activeCfg = _model.sectionConfigForElem(activeIdx);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.content_cut, size: 13, color: Color(0xFF00E5FF)),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            'Mặt cắt Phẫu thuật: T${activeIdx + 1} (${_model.memberLabels[activeIdx]})',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 10.4,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF00E5FF),
+                            ),
+                          ),
+                        ),
+                        Tooltip(
+                          message: 'Sao chép tiết diện đang chỉnh của T${activeIdx + 1} áp dụng cho toàn bộ các thanh',
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(5),
+                            onTap: () => _updateAndSolve(() {
+                              final cur = _elemSections[activeIdx];
+                              _elemSections = List<ElementSectionConfig>.generate(
+                                _elemSections.length,
+                                (_) => cur,
+                              );
+                            }),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0EA5E9).withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(5),
+                                border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.5)),
+                              ),
+                              child: const Text(
+                                'Gán tất cả',
+                                style: TextStyle(fontSize: 9.2, fontWeight: FontWeight.bold, color: Color(0xFF38BDF8)),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                ],
-                onChanged: (v) {
-                  if (v == null) return;
-                  _updateAndSolve(() {
-                    _sectionShape = v;
-                    _customSection = CustomSectionGeometry.fromArea(v, _aMm2);
-                  });
-                },
-              ),
-              const SizedBox(height: 7),
-              _buildSectionGeometryBox(border),
+                    const SizedBox(height: 5),
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: [
+                        for (int e = 0; e < _model.nElems; e++)
+                          Builder(builder: (_) {
+                            final isSel = e == activeIdx;
+                            final cfgE = _model.sectionConfigForElem(e);
+                            return InkWell(
+                              borderRadius: BorderRadius.circular(6),
+                              onTap: () => setState(() => _selectedElem = e),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: isSel
+                                      ? const Color(0xFF06B6D4).withValues(alpha: 0.25)
+                                      : (_darkMode ? const Color(0xFF0A1426) : const Color(0xFFF1F5F9)),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: isSel
+                                        ? const Color(0xFF00E5FF)
+                                        : (cfgE.isManualMm
+                                            ? const Color(0xFFF59E0B).withValues(alpha: 0.65)
+                                            : border),
+                                    width: isSel ? 1.4 : 1.0,
+                                  ),
+                                ),
+                                child: Text(
+                                  'T${e + 1}·${cfgE.shape.shortLabel}${cfgE.isManualMm ? "*" : ""}',
+                                  style: TextStyle(
+                                    fontSize: 9.4,
+                                    fontWeight: isSel ? FontWeight.bold : FontWeight.w600,
+                                    color: isSel
+                                        ? const Color(0xFF00E5FF)
+                                        : (cfgE.isManualMm
+                                            ? const Color(0xFFFBBF24)
+                                            : (_darkMode ? const Color(0xFFCBD5E1) : const Color(0xFF334155))),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                      ],
+                    ),
+                    const SizedBox(height: 7),
+                    DropdownButtonFormField<SectionShape>(
+                      key: ValueKey('sec_${activeIdx}_${activeCfg.shape.code}'),
+                      initialValue: activeCfg.shape,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: 'Mặt cắt 3D Thanh T${activeIdx + 1} (${_model.memberLabels[activeIdx]})',
+                        isDense: true,
+                        border: const OutlineInputBorder(),
+                      ),
+                      items: [
+                        for (final s in SectionShape.values)
+                          DropdownMenuItem(
+                            value: s,
+                            child: Text(s.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
+                          ),
+                      ],
+                      onChanged: (v) {
+                        if (v == null) return;
+                        _updateAndSolve(() {
+                          final next = List<ElementSectionConfig>.from(_elemSections);
+                          final prev = next[activeIdx];
+                          next[activeIdx] = prev.isManualMm
+                              ? ElementSectionConfig(
+                                  shape: v,
+                                  customGeometry: CustomSectionGeometry.fromArea(v, _model.areas[activeIdx]),
+                                )
+                              : ElementSectionConfig(shape: v);
+                          _elemSections = next;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 7),
+                    _buildSectionGeometryBox(border, activeIdx),
+                  ],
+                );
+              }),
             ],
           ),
         ),
@@ -1230,7 +1364,11 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
         ),
         const SizedBox(height: 10),
 
-        // Card 3: Thông số hình học, vật liệu & mức tải (Nhập số trực tiếp + Thanh trượt + Reset)
+        // Card 3: Điều chỉnh thông số khoảng cách & chiều dài từng thanh (L thanh / Tọa độ nút X, Y)
+        _buildMemberLengthsCard(cardBg, border),
+        const SizedBox(height: 10),
+
+        // Card 4: Thông số vật liệu & mức tải (Nhập số trực tiếp + Thanh trượt + Reset)
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: border)),
@@ -1241,7 +1379,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Expanded(
-                    child: Text('3. Thông số Vật liệu & Tải trọng',
+                    child: Text('4. Thông số Vật liệu & Tải trọng',
                         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.3, color: Color(0xFF38BDF8))),
                   ),
                   Tooltip(
@@ -1272,7 +1410,19 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                 hardMax: 100000,
                 unit: 'mm',
                 darkMode: _darkMode,
-                onChanged: (v) => _updateAndSolve(() => _lMm = v),
+                onChanged: (v) => _updateAndSolve(() {
+                  if (_customCoords != null && _lMm > 1e-6) {
+                    final ratio = v / _lMm;
+                    _customCoords = [
+                      for (final c in _customCoords!)
+                        [
+                          double.parse((c[0] * ratio).toStringAsFixed(1)),
+                          double.parse((c[1] * ratio).toStringAsFixed(1)),
+                        ],
+                    ];
+                  }
+                  _lMm = v;
+                }),
               ),
               _EditableParamSlider(
                 label: 'Mô-đun đàn hồi E',
@@ -1294,15 +1444,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                 hardMax: 500000,
                 unit: 'mm²',
                 darkMode: _darkMode,
-                onChanged: (v) => _updateAndSolve(() {
-                  if (_useCustomSection) {
-                    final oldA = _customSection.computedAreaMm2(_sectionShape);
-                    if (oldA > 1e-6 && v > 1e-6) {
-                      _customSection = _customSection.scaled(math.sqrt(v / oldA));
-                    }
-                  }
-                  _aMm2 = v;
-                }),
+                onChanged: (v) => _updateAndSolve(() => _aMm2 = v),
               ),
               _EditableParamSlider(
                 label: 'Tải trọng tham chiếu P',
@@ -1378,7 +1520,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('4. Chỉ số Kết quả Tức thì',
+              const Text('5. Chỉ số Kết quả Tức thì',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5, color: Color(0xFF10B981))),
               const SizedBox(height: 6),
               Text(
@@ -1482,16 +1624,235 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
     return TheoryAndCodePanel(darkMode: _darkMode);
   }
 
-  void _applyCustomSection(CustomSectionGeometry nextGeom) {
+  void _applyCustomSectionForElem(int elemIdx, CustomSectionGeometry nextGeom) {
     _updateAndSolve(() {
-      _useCustomSection = true;
-      _customSection = nextGeom;
-      _aMm2 = double.parse(nextGeom.computedAreaMm2(_sectionShape).toStringAsFixed(1));
+      final idx = elemIdx.clamp(0, _elemSections.length - 1);
+      final next = List<ElementSectionConfig>.from(_elemSections);
+      next[idx] = next[idx].copyWith(customGeometry: nextGeom);
+      _elemSections = next;
     });
   }
 
-  Widget _buildSectionGeometryBox(Color border) {
-    final baseDims = _model.sectionDimsForElem(0);
+  bool _areCoordsValid(List<List<double>> coords) {
+    for (final e in _model.conn) {
+      final ni = e[0] - 1;
+      final nj = e[1] - 1;
+      final len = math.sqrt(
+        math.pow(coords[nj][0] - coords[ni][0], 2) + math.pow(coords[nj][1] - coords[ni][1], 2),
+      );
+      if (len < 20.0) return false;
+    }
+    return true;
+  }
+
+  void _setMemberLength(int elemIdx, double newLenMm) {
+    final idx = elemIdx.clamp(0, _model.nElems - 1);
+    final coords = [for (final c in _model.coords) List<double>.from(c)];
+    final ni = _model.conn[idx][0] - 1;
+    final nj = _model.conn[idx][1] - 1;
+    final anchor = (nj == 0 && ni != 0) ? nj : ni;
+    final movable = (nj == 0 && ni != 0) ? ni : nj;
+    final dx = coords[movable][0] - coords[anchor][0];
+    final dy = coords[movable][1] - coords[anchor][1];
+    final oldLen = math.sqrt(dx * dx + dy * dy);
+    if (oldLen < 1e-6) return;
+    final targetLen = newLenMm.clamp(50.0, 50000.0).toDouble();
+    coords[movable][0] = double.parse((coords[anchor][0] + (dx / oldLen) * targetLen).toStringAsFixed(1));
+    coords[movable][1] = double.parse((coords[anchor][1] + (dy / oldLen) * targetLen).toStringAsFixed(1));
+    if (!_areCoordsValid(coords)) return;
+    _updateAndSolve(() => _customCoords = coords);
+  }
+
+  void _setNodeCoord(int nodeIdx, int axis, double valMm) {
+    if (nodeIdx < 0 || nodeIdx >= _model.nNodes) return;
+    final coords = [for (final c in _model.coords) List<double>.from(c)];
+    coords[nodeIdx][axis] = double.parse(valMm.clamp(-50000.0, 50000.0).toStringAsFixed(1));
+    if (!_areCoordsValid(coords)) return;
+    _updateAndSolve(() => _customCoords = coords);
+  }
+
+  Widget _buildMemberLengthsCard(Color cardBg, Color border) {
+    final boxBg = _darkMode ? const Color(0xFF0A1426) : const Color(0xFFF8FAFC);
+    final textSub = _darkMode ? const Color(0xFF94A3B8) : const Color(0xFF475569);
+    final isCustom = _customCoords != null;
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isCustom ? const Color(0xFF06B6D4).withValues(alpha: 0.65) : border,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '3. Khoảng cách & Chiều dài Thanh (mm)',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.2, color: Color(0xFF38BDF8)),
+                ),
+              ),
+              Tooltip(
+                message: 'Khôi phục chiều dài & tọa độ nút mặc định theo L cơ sở',
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF38BDF8),
+                    side: BorderSide(color: const Color(0xFF38BDF8).withValues(alpha: 0.55)),
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                  ),
+                  onPressed: () => _updateAndSolve(() => _customCoords = null),
+                  icon: const Icon(Icons.undo, size: 12.5),
+                  label: const Text('Mặc định', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          SegmentedButton<bool>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: false, label: Text('Chiều dài thanh L', style: TextStyle(fontSize: 9.8))),
+              ButtonSegment(value: true, label: Text('Tọa độ nút (X, Y)', style: TextStyle(fontSize: 9.8))),
+            ],
+            selected: {_editNodeCoordsMode},
+            onSelectionChanged: (s) => setState(() => _editNodeCoordsMode = s.first),
+          ),
+          const SizedBox(height: 7),
+          if (!_editNodeCoordsMode) ...[
+            for (int e = 0; e < _model.nElems; e++)
+              Padding(
+                padding: EdgeInsets.only(bottom: e + 1 < _model.nElems ? 6 : 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    InkWell(
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: () => setState(() => _selectedElem = e),
+                      child: Container(
+                        width: 68,
+                        height: 26,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: e == _selectedElem
+                              ? const Color(0xFF06B6D4).withValues(alpha: 0.24)
+                              : boxBg,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: e == _selectedElem ? const Color(0xFF00E5FF) : border,
+                          ),
+                        ),
+                        child: Text(
+                          'T${e + 1} (${_model.memberLabels[e]})',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.bold,
+                            color: e == _selectedElem
+                                ? const Color(0xFF00E5FF)
+                                : (_darkMode ? const Color(0xFFCBD5E1) : const Color(0xFF334155)),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: _CompactDimField(
+                        key: ValueKey('len_${_preset.code}_$e'),
+                        label: 'Chiều dài L${e + 1} (N${_model.conn[e][0]}→N${_model.conn[e][1]})',
+                        value: double.parse(_model.initialLength(e).toStringAsFixed(1)),
+                        minVal: 50,
+                        maxVal: 50000,
+                        darkMode: _darkMode,
+                        onChanged: (v) => _setMemberLength(e, v),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 5),
+            Text(
+              'Sửa L thanh sẽ dịch nút đầu cuối theo phương thanh; chuyển sang "Tọa độ nút (X, Y)" để chỉnh khoảng cách tự do từng nút.',
+              style: TextStyle(fontSize: 9.0, height: 1.25, color: textSub),
+            ),
+          ] else ...[
+            for (int i = 0; i < _model.nNodes; i++)
+              Padding(
+                padding: EdgeInsets.only(bottom: i + 1 < _model.nNodes ? 6 : 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 26,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: boxBg,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: border),
+                      ),
+                      child: Text(
+                        'N${i + 1}',
+                        style: const TextStyle(
+                          fontSize: 10.2,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF38BDF8),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _CompactDimField(
+                        key: ValueKey('nx_${_preset.code}_$i'),
+                        label: 'X${i + 1}',
+                        value: double.parse(_model.coords[i][0].toStringAsFixed(1)),
+                        minVal: -50000,
+                        maxVal: 50000,
+                        allowNegative: true,
+                        darkMode: _darkMode,
+                        onChanged: (v) => _setNodeCoord(i, 0, v),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _CompactDimField(
+                        key: ValueKey('ny_${_preset.code}_$i'),
+                        label: 'Y${i + 1}',
+                        value: double.parse(_model.coords[i][1].toStringAsFixed(1)),
+                        minVal: -50000,
+                        maxVal: 50000,
+                        allowNegative: true,
+                        darkMode: _darkMode,
+                        onChanged: (v) => _setNodeCoord(i, 1, v),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 5),
+            Text(
+              'Chỉnh trực tiếp tọa độ (X, Y) từng nút (mm) để thay đổi nhịp, chiều cao, độ dốc mái hoặc khoảng cách thanh bất kỳ.',
+              style: TextStyle(fontSize: 9.0, height: 1.25, color: textSub),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionGeometryBox(Color border, int activeIdx) {
+    final cfg = _model.sectionConfigForElem(activeIdx);
+    final shapeE = cfg.shape;
+    final isManual = cfg.isManualMm;
+    final geom = cfg.customGeometry ?? CustomSectionGeometry.fromArea(shapeE, _model.areas[activeIdx]);
+    final dims = _model.sectionDimsForElem(activeIdx);
     final boxBg = _darkMode ? const Color(0xFF0A1426) : const Color(0xFFF8FAFC);
     final textSub = _darkMode ? const Color(0xFF94A3B8) : const Color(0xFF475569);
 
@@ -1499,6 +1860,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
     void addField(String lbl, double val, double minV, double maxV, ValueChanged<double> onSet) {
       fields.add(
         _CompactDimField(
+          key: ValueKey('dim_${activeIdx}_${shapeE.code}_$lbl'),
           label: lbl,
           value: val,
           minVal: minV,
@@ -1509,87 +1871,87 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
       );
     }
 
-    switch (_sectionShape) {
+    switch (shapeE) {
       case SectionShape.solidRod:
-        addField('Đường kính D', _customSection.heightMm, 8, 2000,
-            (v) => _applyCustomSection(_customSection.copyWith(heightMm: v, widthMm: v)));
+        addField('Đường kính D', geom.heightMm, 8, 2000,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(heightMm: v, widthMm: v)));
         break;
       case SectionShape.circTube:
-        addField('Đường kính D', _customSection.heightMm, 12, 2000,
-            (v) => _applyCustomSection(_customSection.copyWith(heightMm: v, widthMm: v)));
-        addField('Thành dày t', _customSection.tfMm, 1, 400,
-            (v) => _applyCustomSection(_customSection.copyWith(tfMm: v, twMm: v)));
+        addField('Đường kính D', geom.heightMm, 12, 2000,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(heightMm: v, widthMm: v)));
+        addField('Thành dày t', geom.tfMm, 1, 400,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(tfMm: v, twMm: v)));
         break;
       case SectionShape.solidRect:
-        addField('Chiều cao H', _customSection.heightMm, 8, 2000,
-            (v) => _applyCustomSection(_customSection.copyWith(heightMm: v)));
-        addField('Bề rộng B', _customSection.widthMm, 8, 2000,
-            (v) => _applyCustomSection(_customSection.copyWith(widthMm: v)));
+        addField('Chiều cao H', geom.heightMm, 8, 2000,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(heightMm: v)));
+        addField('Bề rộng B', geom.widthMm, 8, 2000,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(widthMm: v)));
         break;
       case SectionShape.boxSection:
-        addField('Chiều cao H', _customSection.heightMm, 12, 2000,
-            (v) => _applyCustomSection(_customSection.copyWith(heightMm: v)));
-        addField('Bề rộng B', _customSection.widthMm, 12, 2000,
-            (v) => _applyCustomSection(_customSection.copyWith(widthMm: v)));
-        addField('Thành dày t', _customSection.tfMm, 1, 400,
-            (v) => _applyCustomSection(_customSection.copyWith(tfMm: v, twMm: v)));
+        addField('Chiều cao H', geom.heightMm, 12, 2000,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(heightMm: v)));
+        addField('Bề rộng B', geom.widthMm, 12, 2000,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(widthMm: v)));
+        addField('Thành dày t', geom.tfMm, 1, 400,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(tfMm: v, twMm: v)));
         break;
       case SectionShape.angleL:
-        addField('Cạnh đứng H', _customSection.heightMm, 15, 1000,
-            (v) => _applyCustomSection(_customSection.copyWith(heightMm: v)));
-        addField('Cạnh ngang B', _customSection.widthMm, 15, 1000,
-            (v) => _applyCustomSection(_customSection.copyWith(widthMm: v)));
-        addField('Chiều dày t', _customSection.tfMm, 1.5, 200,
-            (v) => _applyCustomSection(_customSection.copyWith(tfMm: v, twMm: v)));
+        addField('Cạnh đứng H', geom.heightMm, 15, 1000,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(heightMm: v)));
+        addField('Cạnh ngang B', geom.widthMm, 15, 1000,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(widthMm: v)));
+        addField('Chiều dày t', geom.tfMm, 1.5, 200,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(tfMm: v, twMm: v)));
         break;
       case SectionShape.zeeSection:
-        addField('Chiều cao H', _customSection.heightMm, 20, 1000,
-            (v) => _applyCustomSection(_customSection.copyWith(heightMm: v)));
-        addField('Rộng cánh B₁', _customSection.widthMm, 15, 600,
-            (v) => _applyCustomSection(_customSection.copyWith(widthMm: v)));
-        addField('Chiều dày t', _customSection.tfMm, 1, 150,
-            (v) => _applyCustomSection(_customSection.copyWith(tfMm: v, twMm: v)));
+        addField('Chiều cao H', geom.heightMm, 20, 1000,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(heightMm: v)));
+        addField('Rộng cánh B₁', geom.widthMm, 15, 600,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(widthMm: v)));
+        addField('Chiều dày t', geom.tfMm, 1, 150,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(tfMm: v, twMm: v)));
         break;
       case SectionShape.doubleAngle:
-        addField('Cạnh đứng H', _customSection.heightMm, 15, 1000,
-            (v) => _applyCustomSection(_customSection.copyWith(heightMm: v)));
-        addField('1 cánh B₁', _customSection.widthMm, 15, 1000,
-            (v) => _applyCustomSection(_customSection.copyWith(widthMm: v)));
-        addField('Chiều dày t', _customSection.tfMm, 1.5, 200,
-            (v) => _applyCustomSection(_customSection.copyWith(tfMm: v, twMm: v)));
-        addField('Khe hở s', _customSection.gapMm, 0, 200,
-            (v) => _applyCustomSection(_customSection.copyWith(gapMm: v)));
+        addField('Cạnh đứng H', geom.heightMm, 15, 1000,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(heightMm: v)));
+        addField('1 cánh B₁', geom.widthMm, 15, 1000,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(widthMm: v)));
+        addField('Chiều dày t', geom.tfMm, 1.5, 200,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(tfMm: v, twMm: v)));
+        addField('Khe hở s', geom.gapMm, 0, 200,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(gapMm: v)));
         break;
       case SectionShape.doubleChannel:
-        addField('Chiều cao H', _customSection.heightMm, 20, 1500,
-            (v) => _applyCustomSection(_customSection.copyWith(heightMm: v)));
-        addField('1 cánh B₁', _customSection.widthMm, 15, 800,
-            (v) => _applyCustomSection(_customSection.copyWith(widthMm: v)));
-        addField('Dày cánh tf', _customSection.tfMm, 1.5, 200,
-            (v) => _applyCustomSection(_customSection.copyWith(tfMm: v)));
-        addField('Dày bụng tw', _customSection.twMm, 1.5, 200,
-            (v) => _applyCustomSection(_customSection.copyWith(twMm: v)));
-        addField('Khe hở s', _customSection.gapMm, 0, 200,
-            (v) => _applyCustomSection(_customSection.copyWith(gapMm: v)));
+        addField('Chiều cao H', geom.heightMm, 20, 1500,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(heightMm: v)));
+        addField('1 cánh B₁', geom.widthMm, 15, 800,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(widthMm: v)));
+        addField('Dày cánh tf', geom.tfMm, 1.5, 200,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(tfMm: v)));
+        addField('Dày bụng tw', geom.twMm, 1.5, 200,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(twMm: v)));
+        addField('Khe hở s', geom.gapMm, 0, 200,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(gapMm: v)));
         break;
       case SectionShape.iSection:
       case SectionShape.channelC:
       case SectionShape.teeSection:
       case SectionShape.cruciform:
-        final tfLbl = _sectionShape == SectionShape.cruciform ? 'Nhánh ngang tf' : 'Dày cánh tf';
-        final twLbl = _sectionShape == SectionShape.cruciform ? 'Nhánh đứng tw' : 'Dày bụng tw';
-        addField('Chiều cao H', _customSection.heightMm, 20, 2000,
-            (v) => _applyCustomSection(_customSection.copyWith(heightMm: v)));
-        addField('Bề rộng B', _customSection.widthMm, 15, 2000,
-            (v) => _applyCustomSection(_customSection.copyWith(widthMm: v)));
-        addField(tfLbl, _customSection.tfMm, 1.5, 300,
-            (v) => _applyCustomSection(_customSection.copyWith(tfMm: v)));
-        addField(twLbl, _customSection.twMm, 1.5, 300,
-            (v) => _applyCustomSection(_customSection.copyWith(twMm: v)));
+        final tfLbl = shapeE == SectionShape.cruciform ? 'Nhánh ngang tf' : 'Dày cánh tf';
+        final twLbl = shapeE == SectionShape.cruciform ? 'Nhánh đứng tw' : 'Dày bụng tw';
+        addField('Chiều cao H', geom.heightMm, 20, 2000,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(heightMm: v)));
+        addField('Bề rộng B', geom.widthMm, 15, 2000,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(widthMm: v)));
+        addField(tfLbl, geom.tfMm, 1.5, 300,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(tfMm: v)));
+        addField(twLbl, geom.twMm, 1.5, 300,
+            (v) => _applyCustomSectionForElem(activeIdx, geom.copyWith(twMm: v)));
         break;
     }
 
-    final presets = CustomSectionGeometry.presetsFor(_sectionShape);
+    final presets = CustomSectionGeometry.presetsFor(shapeE);
 
     return Container(
       padding: const EdgeInsets.all(8),
@@ -1597,7 +1959,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
         color: boxBg,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: _useCustomSection ? const Color(0xFF06B6D4).withValues(alpha: 0.65) : border,
+          color: isManual ? const Color(0xFF06B6D4).withValues(alpha: 0.65) : border,
         ),
       ),
       child: Column(
@@ -1607,40 +1969,45 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
             children: [
               const Icon(Icons.straighten, size: 13.5, color: Color(0xFF38BDF8)),
               const SizedBox(width: 5),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'Thông số hình học mặt cắt (mm)',
-                  style: TextStyle(fontSize: 10.4, fontWeight: FontWeight.bold, color: Color(0xFF38BDF8)),
+                  'Kích thước T${activeIdx + 1} (${_model.memberLabels[activeIdx]})',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 10.3, fontWeight: FontWeight.bold, color: Color(0xFF38BDF8)),
                 ),
               ),
               InkWell(
                 borderRadius: BorderRadius.circular(5),
                 onTap: () => _updateAndSolve(() {
-                  if (!_useCustomSection) {
-                    _customSection = CustomSectionGeometry.fromArea(_sectionShape, _aMm2);
-                    _useCustomSection = true;
-                    _aMm2 = double.parse(_customSection.computedAreaMm2(_sectionShape).toStringAsFixed(1));
+                  final next = List<ElementSectionConfig>.from(_elemSections);
+                  if (!isManual) {
+                    next[activeIdx] = ElementSectionConfig(
+                      shape: shapeE,
+                      customGeometry: CustomSectionGeometry.fromArea(shapeE, _model.areas[activeIdx]),
+                    );
                   } else {
-                    _useCustomSection = false;
+                    next[activeIdx] = ElementSectionConfig(shape: shapeE);
                   }
+                  _elemSections = next;
                 }),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                   decoration: BoxDecoration(
-                    color: _useCustomSection
+                    color: isManual
                         ? const Color(0xFF06B6D4).withValues(alpha: 0.22)
                         : (_darkMode ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0)),
                     borderRadius: BorderRadius.circular(5),
                     border: Border.all(
-                      color: _useCustomSection ? const Color(0xFF38BDF8) : border,
+                      color: isManual ? const Color(0xFF38BDF8) : border,
                     ),
                   ),
                   child: Text(
-                    _useCustomSection ? 'Đang nhập mm ✓' : 'Nhập tay (mm)',
+                    isManual ? 'Đang nhập mm ✓' : 'Nhập tay (mm)',
                     style: TextStyle(
                       fontSize: 9.6,
                       fontWeight: FontWeight.bold,
-                      color: _useCustomSection ? const Color(0xFF38BDF8) : textSub,
+                      color: isManual ? const Color(0xFF38BDF8) : textSub,
                     ),
                   ),
                 ),
@@ -1649,25 +2016,25 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
           ),
           const SizedBox(height: 5),
           Text(
-            '${baseDims.formatSpec(_sectionShape)}\n'
-            'A=${baseDims.areaMm2.toStringAsFixed(0)} mm² • Ix=${(baseDims.ix / 1e4).toStringAsFixed(1)} • Iy=${(baseDims.iy / 1e4).toStringAsFixed(1)} cm⁴ • i=${baseDims.rGyrationMin.toStringAsFixed(1)} mm',
+            '${dims.formatSpec(shapeE)} • L=${_model.initialLength(activeIdx).toStringAsFixed(0)} mm\n'
+            'A=${dims.areaMm2.toStringAsFixed(0)} mm² • Ix=${(dims.ix / 1e4).toStringAsFixed(1)} • Iy=${(dims.iy / 1e4).toStringAsFixed(1)} cm⁴ • i=${dims.rGyrationMin.toStringAsFixed(1)} mm',
             style: TextStyle(
-              fontSize: 9.5,
+              fontSize: 9.4,
               height: 1.35,
               fontFamily: 'DejaVuSansMono',
               color: _darkMode ? const Color(0xFFBAE6FD) : const Color(0xFF0F3D6E),
             ),
           ),
-          if (_useCustomSection) ...[
+          if (isManual) ...[
             const SizedBox(height: 6),
             Wrap(
               spacing: 4,
               runSpacing: 4,
               children: [
-                for (final (name, geom) in presets)
+                for (final (name, pGeom) in presets)
                   InkWell(
                     borderRadius: BorderRadius.circular(5),
-                    onTap: () => _applyCustomSection(geom),
+                    onTap: () => _applyCustomSectionForElem(activeIdx, pGeom),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                       decoration: BoxDecoration(
@@ -1688,7 +2055,6 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
               ],
             ),
             const SizedBox(height: 7),
-            // Sắp xếp 2 ô nhập mỗi hàng gọn gàng trên mọi độ rộng màn hình
             for (int r = 0; r < fields.length; r += 2)
               Padding(
                 padding: EdgeInsets.only(bottom: r + 2 < fields.length ? 6 : 0),
@@ -1705,7 +2071,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
               ),
             const SizedBox(height: 5),
             Text(
-              'Tự tính A, Ix, Iy và đồng bộ tức thời sang 3D, Phẫu thuật & Liên kết (Enter / rời ô để áp dụng).',
+              'Chỉ thay đổi tiết diện riêng Thanh T${activeIdx + 1}; các thanh khác giữ nguyên thiết lập sau cùng.',
               style: TextStyle(fontSize: 9.0, height: 1.25, color: textSub),
             ),
           ],
@@ -1914,22 +2280,25 @@ class _EditableParamSliderState extends State<_EditableParamSlider> {
   }
 }
 
-/// Ô nhập kích thước mặt cắt gọn (mm) dùng cho khung Thông số hình học mặt cắt 3D
+/// Ô nhập kích thước mặt cắt / tọa độ gọn (mm)
 class _CompactDimField extends StatefulWidget {
   final String label;
   final double value;
   final double minVal;
   final double maxVal;
+  final bool allowNegative;
   final bool darkMode;
   final ValueChanged<double> onChanged;
 
   const _CompactDimField({
+    super.key,
     required this.label,
     required this.value,
     required this.minVal,
     required this.maxVal,
     required this.darkMode,
     required this.onChanged,
+    this.allowNegative = false,
   });
 
   @override
@@ -2013,8 +2382,12 @@ class _CompactDimFieldState extends State<_CompactDimField> {
             controller: _ctrl,
             focusNode: _focus,
             textAlign: TextAlign.right,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9\.\,]'))],
+            keyboardType: TextInputType.numberWithOptions(decimal: true, signed: widget.allowNegative),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(
+                widget.allowNegative ? RegExp(r'[0-9\.\,\-]') : RegExp(r'[0-9\.\,]'),
+              ),
+            ],
             style: const TextStyle(
               fontSize: 10.8,
               fontWeight: FontWeight.bold,

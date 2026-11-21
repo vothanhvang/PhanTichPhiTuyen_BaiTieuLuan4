@@ -80,6 +80,14 @@ def _build_model_from_payload(payload: Dict[str, Any]):
             section_shape=str(payload.get("section_shape", "I_SECTION")),
         )
 
+    if "coords_mm" in payload and isinstance(payload["coords_mm"], list):
+        cc = payload["coords_mm"]
+        if len(cc) == model.n_nodes and all(isinstance(pt, list) and len(pt) >= 2 for pt in cc):
+            model.coords = np.array([[float(pt[0]), float(pt[1])] for pt in cc], dtype=float)
+    if "areas_mm2" in payload and isinstance(payload["areas_mm2"], list):
+        aa = [float(v) for v in payload["areas_mm2"]]
+        if len(aa) == model.n_elems and all(v > 0.0 for v in aa):
+            model.areas = np.array(aa, dtype=float)
     if "fixed_dofs_0" in payload and isinstance(payload["fixed_dofs_0"], list):
         fd = [int(d) for d in payload["fixed_dofs_0"] if 0 <= int(d) < model.n_dofs]
         if fd:

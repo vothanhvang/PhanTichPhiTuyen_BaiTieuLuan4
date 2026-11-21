@@ -122,8 +122,10 @@ class SurgicalDissectionPanel extends StatelessWidget {
                           DropdownMenuItem(
                             value: e,
                             child: Text(
-                              'Thanh ${e + 1} (${model.memberLabels[e]}) — σ=${resultNL.stressMpa[e].toStringAsFixed(2)} MPa',
-                              style: const TextStyle(fontSize: 11.5),
+                              'Thanh ${e + 1} (${model.memberLabels[e]}) [${model.sectionShapeForElem(e).shortLabel}] — σ=${resultNL.stressMpa[e].toStringAsFixed(2)} MPa',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 11.2),
                             ),
                           ),
                       ],
@@ -203,8 +205,8 @@ class SurgicalDissectionPanel extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      'Mặt cắt ngang: ${model.sectionShape.label}',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
+                      'Mặt cắt T${selectedElem + 1} (${model.memberLabels[selectedElem.clamp(0, model.nElems - 1)]}): ${model.sectionShapeForElem(selectedElem).label}',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.3),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -224,7 +226,9 @@ class SurgicalDissectionPanel extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Builder(builder: (_) {
+                final shapeE = model.sectionShapeForElem(selectedElem);
                 final d = model.sectionDimsForElem(selectedElem);
+                final l0 = model.initialLength(selectedElem.clamp(0, model.nElems - 1));
                 return Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
@@ -234,10 +238,10 @@ class SurgicalDissectionPanel extends StatelessWidget {
                     border: Border.all(color: border),
                   ),
                   child: Text(
-                    '${d.formatSpec(model.sectionShape)}  •  A=${d.areaMm2.toStringAsFixed(0)} mm²\n'
-                    'Ix=${(d.ix / 1e4).toStringAsFixed(1)} cm⁴  •  Iy=${(d.iy / 1e4).toStringAsFixed(1)} cm⁴  •  i_min=${d.rGyrationMin.toStringAsFixed(1)} mm',
+                    '${d.formatSpec(shapeE)}  •  L₀=${l0.toStringAsFixed(1)} mm\n'
+                    'A=${d.areaMm2.toStringAsFixed(0)} mm²  •  Ix=${(d.ix / 1e4).toStringAsFixed(1)}  •  Iy=${(d.iy / 1e4).toStringAsFixed(1)} cm⁴  •  i=${d.rGyrationMin.toStringAsFixed(1)} mm',
                     style: TextStyle(
-                      fontSize: 9.8,
+                      fontSize: 9.7,
                       height: 1.35,
                       fontFamily: 'DejaVuSansMono',
                       color: darkMode ? const Color(0xFFBAE6FD) : const Color(0xFF0F3D6E),
@@ -426,7 +430,7 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
   bool _inside(double eta, double zeta, SectionDimensions dims) {
     final xMm = zeta * 0.5 * dims.width;
     final yMm = eta * 0.5 * dims.height;
-    return dims.containsLocalPoint(model.sectionShape, xMm, yMm);
+    return dims.containsLocalPoint(model.sectionShapeForElem(elemIndex), xMm, yMm);
   }
 
   @override
@@ -707,14 +711,15 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
       return Offset(cx + zeta * halfX * sx, cy - eta * halfY * baseScale);
     }
 
-    if (model.sectionShape == SectionShape.solidRod) {
+    final shapeE = model.sectionShapeForElem(elemIndex);
+    if (shapeE == SectionShape.solidRod) {
       canvas.drawOval(
         Rect.fromCenter(center: Offset(cx, cy), width: 2 * halfX * baseScale, height: 2 * halfY * baseScale),
         p,
       );
       return;
     }
-    if (model.sectionShape == SectionShape.circTube) {
+    if (shapeE == SectionShape.circTube) {
       canvas.drawOval(
         Rect.fromCenter(center: Offset(cx, cy), width: 2 * halfX * baseScale, height: 2 * halfY * baseScale),
         p,
@@ -733,7 +738,7 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
 
     final hwMm = math.max(1e-6, 0.5 * dims.width);
     final hhMm = math.max(1e-6, 0.5 * dims.height);
-    final polys = dims.outlinePolygonsMm(model.sectionShape, includeInnerHole: true);
+    final polys = dims.outlinePolygonsMm(shapeE, includeInnerHole: true);
     for (final poly in polys) {
       if (poly.length < 3) continue;
       final path = Path();

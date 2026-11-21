@@ -195,5 +195,47 @@ void main() {
     expect(dL100.areaMm2, closeTo(1900.0, 1e-6));
     expect(dL100.ix, closeTo(dL100.iy, 1e-3));
     expect(dL100.iMinor, lessThan(dL100.ix * 0.5));
+
+    // 6. Kiểm chứng tùy biến tiết diện ĐỘC LẬP TỪNG THANH + tùy biến CHIỀU DÀI / KHOẢNG CÁCH THANH
+    const tube140 = CustomSectionGeometry(heightMm: 140, widthMm: 140, tfMm: 8.0, twMm: 8.0);
+    const twoL90 = CustomSectionGeometry(heightMm: 90, widthMm: 90, tfMm: 8.0, twMm: 8.0, gapMm: 12.0);
+    final mixedSections = const [
+      ElementSectionConfig(shape: SectionShape.iSection),
+      ElementSectionConfig(shape: SectionShape.boxSection),
+      ElementSectionConfig(shape: SectionShape.solidRect, customGeometry: rect100x200),
+      ElementSectionConfig(shape: SectionShape.circTube, customGeometry: tube140),
+      ElementSectionConfig(shape: SectionShape.doubleAngle, customGeometry: twoL90),
+    ];
+    final customCoords = const [
+      [0.0, 0.0],
+      [1200.0, 0.0],    // Kéo dài T1 (1-2) lên 1200 mm
+      [0.0, 1300.0],    // Kéo cao T2 (1-3) lên 1300 mm
+      [2600.0, 1300.0], // Kéo dài T3 (3-4) lên 2600 mm
+    ];
+    final mMixed = TrussModelData.create(
+      preset: TrussPreset.assignment5Bar,
+      elementSections: mixedSections,
+      customCoords: customCoords,
+    );
+    expect(mMixed.hasMixedSections, isTrue);
+    expect(mMixed.sectionShapeForElem(0), SectionShape.iSection);
+    expect(mMixed.sectionShapeForElem(1), SectionShape.boxSection);
+    expect(mMixed.sectionShapeForElem(2), SectionShape.solidRect);
+    expect(mMixed.sectionShapeForElem(3), SectionShape.circTube);
+    expect(mMixed.sectionShapeForElem(4), SectionShape.doubleAngle);
+    expect(mMixed.areas[0], closeTo(2001.0, 1e-6));
+    expect(mMixed.areas[2], closeTo(20000.0, 1e-6));
+    expect(mMixed.areas[3], closeTo(tube140.computedAreaMm2(SectionShape.circTube), 1e-6));
+    expect(mMixed.areas[4], closeTo(twoL90.computedAreaMm2(SectionShape.doubleAngle), 1e-6));
+    expect(mMixed.initialLength(0), closeTo(1200.0, 1e-6));
+    expect(mMixed.initialLength(1), closeTo(1300.0, 1e-6));
+    expect(mMixed.initialLength(2), closeTo(2600.0, 1e-6));
+
+    final rMixed = CalfemNonlinearEngine.solveFullNR(mMixed, isTotalLagrangian: false, nSteps: 10);
+    expect(rMixed.converged, isTrue);
+    expect(rMixed.sumFxN.abs(), lessThan(1e-4));
+    expect(rMixed.sumFyN.abs(), lessThan(1e-4));
+    expect(rMixed.sumMNmm.abs(), lessThan(1e-1));
+    expect(rMixed.maxFreeResidualN, lessThan(1e-5));
   });
 }

@@ -585,18 +585,34 @@ class _Ansys3DPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 1. Lưới sàn tham chiếu 3D (mặt phẳng Z = -180 mm phía sau)
+    // 1. Lưới sàn tham chiếu 3D tự động thích ứng theo khoảng cách / kích thước dàn thực tế
     final floorPaint = Paint()
       ..color = darkMode ? const Color(0x331E293B) : const Color(0x4494A3B8)
       ..strokeWidth = 0.9;
-    for (double x = -400; x <= 2400; x += 250) {
-      final a = cam.project(_Vec3(x, -200, -180)).pt;
-      final b = cam.project(_Vec3(x, 1400, -180)).pt;
+    double gMinX = double.infinity, gMaxX = -double.infinity;
+    double gMinY = double.infinity, gMaxY = -double.infinity;
+    for (final c in model.coords) {
+      gMinX = math.min(gMinX, c[0]);
+      gMaxX = math.max(gMaxX, c[0]);
+      gMinY = math.min(gMinY, c[1]);
+      gMaxY = math.max(gMaxY, c[1]);
+    }
+    final gSpan = math.max(400.0, math.max(gMaxX - gMinX, gMaxY - gMinY));
+    final gStep = (gSpan / 8.0).clamp(100.0, 2000.0);
+    final padX = math.max(300.0, gSpan * 0.22);
+    final padY = math.max(200.0, gSpan * 0.22);
+    final xStart = ((gMinX - padX) / gStep).floor() * gStep;
+    final xEnd = ((gMaxX + padX) / gStep).ceil() * gStep;
+    final yStart = ((gMinY - padY) / gStep).floor() * gStep;
+    final yEnd = ((gMaxY + padY) / gStep).ceil() * gStep;
+    for (double x = xStart; x <= xEnd + 1e-6; x += gStep) {
+      final a = cam.project(_Vec3(x, yStart, -180)).pt;
+      final b = cam.project(_Vec3(x, yEnd, -180)).pt;
       canvas.drawLine(a, b, floorPaint);
     }
-    for (double y = -200; y <= 1400; y += 250) {
-      final a = cam.project(_Vec3(-400, y, -180)).pt;
-      final b = cam.project(_Vec3(2400, y, -180)).pt;
+    for (double y = yStart; y <= yEnd + 1e-6; y += gStep) {
+      final a = cam.project(_Vec3(xStart, y, -180)).pt;
+      final b = cam.project(_Vec3(xEnd, y, -180)).pt;
       canvas.drawLine(a, b, floorPaint);
     }
 
@@ -654,8 +670,9 @@ class _Ansys3DPainter extends CustomPainter {
       final p2 = nodePos3D[nj];
       final tVal = ((valueAt3D(e, 0.5) - minVal) / span).clamp(0.0, 1.0);
       final col = ansysRainbowColor(tVal);
+      final shapeE = model.sectionShapeForElem(e);
       final dims = model.sectionDimsForElem(e);
-      final profiles = _crossSectionPolygons(model.sectionShape, dims);
+      final profiles = _crossSectionPolygons(shapeE, dims);
 
       if (surgicalMode && e == selectedElem) {
         // PHẪU THUẬT 3D: Cắt thanh tại vị trí ξ!

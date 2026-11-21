@@ -82,6 +82,8 @@ class PythonBridge {
         'L_mm': model.baseL,
         'E_mpa': model.E,
         'A_mm2': model.baseA,
+        'areas_mm2': model.areas,
+        'coords_mm': model.coords,
         'P_kN': model.basePKn,
         'nu': model.nu,
         'section_shape': model.sectionShape.code,

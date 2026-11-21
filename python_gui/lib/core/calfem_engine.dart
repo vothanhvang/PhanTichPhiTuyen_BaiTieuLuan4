@@ -18,22 +18,23 @@ import 'dart:math' as math;
 
 /// Kiểu mặt cắt ngang 3D của thanh dàn / khung (đủ 12 tiết diện frame tiêu chuẩn)
 enum SectionShape {
-  iSection('Thép chữ I / H (I / H-Beam)', 'I_SECTION'),
-  boxSection('Thép hộp rỗng (RHS / SHS)', 'BOX_SECTION'),
-  circTube('Ống thép tròn rỗng (CHS)', 'CIRC_TUBE'),
-  solidRect('Chữ nhật / Vuông đặc (B×H)', 'SOLID_RECT'),
-  solidRod('Thanh tròn đặc (Circular Rod)', 'SOLID_ROD'),
-  channelC('Thép chữ C / U (Channel)', 'CHANNEL_C'),
-  angleL('Thép góc chữ L (Angle)', 'ANGLE_L'),
-  doubleAngle('Thép góc đôi 2L (Double Angle)', 'DOUBLE_ANGLE'),
-  doubleChannel('Thép chữ C đôi 2C (Double Channel)', 'DOUBLE_CHANNEL'),
-  teeSection('Thép chữ T (Structural Tee)', 'TEE_SECTION'),
-  zeeSection('Thép chữ Z / Xà gồ Z (Z-Section)', 'ZEE_SECTION'),
-  cruciform('Thép chữ thập (+) (Cruciform)', 'CRUCIFORM');
+  iSection('Thép chữ I / H (I / H-Beam)', 'I/H', 'I_SECTION'),
+  boxSection('Thép hộp rỗng (RHS / SHS)', 'Hộp', 'BOX_SECTION'),
+  circTube('Ống thép tròn rỗng (CHS)', 'Ống Ø', 'CIRC_TUBE'),
+  solidRect('Chữ nhật / Vuông đặc (B×H)', 'CN đặc', 'SOLID_RECT'),
+  solidRod('Thanh tròn đặc (Circular Rod)', 'Tròn Ø', 'SOLID_ROD'),
+  channelC('Thép chữ C / U (Channel)', 'Chữ C', 'CHANNEL_C'),
+  angleL('Thép góc chữ L (Angle)', 'Góc L', 'ANGLE_L'),
+  doubleAngle('Thép góc đôi 2L (Double Angle)', '2L', 'DOUBLE_ANGLE'),
+  doubleChannel('Thép chữ C đôi 2C (Double Channel)', '2C', 'DOUBLE_CHANNEL'),
+  teeSection('Thép chữ T (Structural Tee)', 'Chữ T', 'TEE_SECTION'),
+  zeeSection('Thép chữ Z / Xà gồ Z (Z-Section)', 'Chữ Z', 'ZEE_SECTION'),
+  cruciform('Thép chữ thập (+) (Cruciform)', 'Chữ +', 'CRUCIFORM');
 
   final String label;
+  final String shortLabel;
   final String code;
-  const SectionShape(this.label, this.code);
+  const SectionShape(this.label, this.shortLabel, this.code);
 }
 
 /// Phương pháp phân tích / thuật toán giải phi tuyến
@@ -1000,6 +1001,30 @@ class SectionDimensions {
   }
 }
 
+/// Cấu hình tiết diện riêng cho từng phần tử thanh trong dàn / khung
+class ElementSectionConfig {
+  final SectionShape shape;
+  final CustomSectionGeometry? customGeometry; // null = quy đổi theo diện tích mặc định A_e của bài toán
+
+  const ElementSectionConfig({
+    this.shape = SectionShape.iSection,
+    this.customGeometry,
+  });
+
+  bool get isManualMm => customGeometry != null;
+
+  ElementSectionConfig copyWith({
+    SectionShape? shape,
+    CustomSectionGeometry? customGeometry,
+    bool clearCustom = false,
+  }) {
+    return ElementSectionConfig(
+      shape: shape ?? this.shape,
+      customGeometry: clearCustom ? null : (customGeometry ?? this.customGeometry),
+    );
+  }
+}
+
 /// Dữ liệu mô hình dàn phẳng
 class TrussModelData {
   final String name;
@@ -1018,7 +1043,8 @@ class TrussModelData {
   final List<String> memberLabels;
   final List<String> nodeLabels;
   final SectionShape sectionShape;
-  final CustomSectionGeometry? customSection; // Thông số hình học mặt cắt 3D nhập từ giao diện
+  final CustomSectionGeometry? customSection; // Giữ tương thích ngược toàn hệ khi không dùng elementSections
+  final List<ElementSectionConfig> elementSections; // Thiết lập tiết diện độc lập cho từng thanh
   final double baseL;
   final double baseA;
   final double basePKn;
@@ -1041,15 +1067,56 @@ class TrussModelData {
     required this.nodeLabels,
     required this.sectionShape,
     this.customSection,
+    this.elementSections = const [],
     required this.baseL,
     required this.baseA,
     required this.basePKn,
   });
 
-  /// Trả về kích thước mặt cắt thực tế của thanh `e` (tôn trọng thông số người dùng nhập nếu có!)
+  /// Trả về cấu hình tiết diện (hình dạng + kích thước tùy chỉnh nếu có) riêng của thanh `e`
+  ElementSectionConfig sectionConfigForElem(int e) {
+    final idx = e.clamp(0, nElems - 1);
+    if (idx < elementSections.length) return elementSections[idx];
+    return ElementSectionConfig(shape: sectionShape, customGeometry: customSection);
+  }
+
+  /// Trả về dạng mặt cắt riêng của thanh `e`
+  SectionShape sectionShapeForElem(int e) => sectionConfigForElem(e).shape;
+
+  /// Kiểm tra xem các thanh trong dàn có đang dùng tiết diện khác nhau hay không
+  bool get hasMixedSections {
+    if (elementSections.length <= 1) return false;
+    final first = elementSections.first;
+    for (int i = 1; i < elementSections.length; i++) {
+      final cur = elementSections[i];
+      if (cur.shape != first.shape) return true;
+      if ((cur.customGeometry == null) != (first.customGeometry == null)) return true;
+      if (cur.customGeometry != null && first.customGeometry != null) {
+        final a = cur.customGeometry!;
+        final b = first.customGeometry!;
+        if ((a.heightMm - b.heightMm).abs() > 1e-3 ||
+            (a.widthMm - b.widthMm).abs() > 1e-3 ||
+            (a.tfMm - b.tfMm).abs() > 1e-3 ||
+            (a.twMm - b.twMm).abs() > 1e-3 ||
+            (a.gapMm - b.gapMm).abs() > 1e-3) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /// Trả về kích thước mặt cắt thực tế của thanh `e` (ưu tiên cấu hình riêng từng thanh!)
   SectionDimensions sectionDimsForElem(int e) {
     final idx = e.clamp(0, nElems - 1);
     final aElem = areas[idx];
+    if (idx < elementSections.length) {
+      final cfg = elementSections[idx];
+      if (cfg.customGeometry != null) {
+        return cfg.customGeometry!.toDimensions(cfg.shape);
+      }
+      return SectionDimensions.fromArea(cfg.shape, aElem);
+    }
     if (customSection != null) {
       final aBase = math.max(1.0, customSection!.computedAreaMm2(sectionShape));
       final linearScale = math.sqrt(math.max(0.05, aElem / aBase));
@@ -1165,6 +1232,94 @@ class TrussModelData {
     return math.sqrt(dx * dx + dy * dy);
   }
 
+  /// Số lượng thanh mặc định của từng bài toán mẫu
+  static int defaultElemCountFor(TrussPreset preset) {
+    switch (preset) {
+      case TrussPreset.dahlblomEx91:
+        return 2;
+      case TrussPreset.calfemExs3:
+        return 3;
+      case TrussPreset.vonMisesArch:
+        return 2;
+      case TrussPreset.assignment5Bar:
+        return 5;
+    }
+  }
+
+  /// Tọa độ nút mặc định (mm) của từng bài toán mẫu theo chiều dài cơ sở L
+  static List<List<double>> defaultCoordsFor(TrussPreset preset, double lMm) {
+    switch (preset) {
+      case TrussPreset.dahlblomEx91:
+        return [
+          [0.0, 0.0],
+          [0.0, 1200.0],
+          [1600.0, 0.0],
+        ];
+      case TrussPreset.calfemExs3:
+        return [
+          [0.0, 0.0],
+          [0.0, 1200.0],
+          [1600.0, 0.0],
+          [1600.0, 1200.0],
+        ];
+      case TrussPreset.vonMisesArch:
+        return [
+          [0.0, 0.0],
+          [lMm, 0.2 * lMm],
+          [2.0 * lMm, 0.0],
+        ];
+      case TrussPreset.assignment5Bar:
+        return [
+          [0.0, 0.0],
+          [lMm, 0.0],
+          [0.0, lMm],
+          [2.0 * lMm, lMm],
+        ];
+    }
+  }
+
+  static List<List<double>> _resolveCoords(
+    List<List<double>> defCoords,
+    List<List<double>>? customCoords,
+    List<List<int>> conn,
+  ) {
+    if (customCoords == null || customCoords.length != defCoords.length) {
+      return defCoords;
+    }
+    final cand = [
+      for (final c in customCoords)
+        [
+          (c.isNotEmpty && c[0].isFinite) ? c[0].clamp(-100000.0, 100000.0).toDouble() : 0.0,
+          (c.length >= 2 && c[1].isFinite) ? c[1].clamp(-100000.0, 100000.0).toDouble() : 0.0,
+        ],
+    ];
+    // Kiểm tra an toàn không để thanh nào bị suy biến chiều dài bằng 0
+    for (final e in conn) {
+      final ni = e[0] - 1;
+      final nj = e[1] - 1;
+      final len = math.sqrt(
+        math.pow(cand[nj][0] - cand[ni][0], 2) + math.pow(cand[nj][1] - cand[ni][1], 2),
+      );
+      if (len < 10.0) return defCoords;
+    }
+    return cand;
+  }
+
+  static List<double> _resolveAreas(
+    List<double> baseAreas,
+    List<ElementSectionConfig>? elementSections,
+  ) {
+    if (elementSections == null || elementSections.length != baseAreas.length) {
+      return List<double>.from(baseAreas);
+    }
+    return [
+      for (int e = 0; e < baseAreas.length; e++)
+        elementSections[e].customGeometry != null
+            ? elementSections[e].customGeometry!.computedAreaMm2(elementSections[e].shape)
+            : baseAreas[e],
+    ];
+  }
+
   static TrussModelData create({
     required TrussPreset preset,
     double lMm = 1000.0,
@@ -1174,6 +1329,8 @@ class TrussModelData {
     double nu = 0.30,
     SectionShape sectionShape = SectionShape.iSection,
     CustomSectionGeometry? customSection,
+    List<ElementSectionConfig>? elementSections,
+    List<List<double>>? customCoords,
     List<NodeSupportType>? customSupports,
     List<SupportDirection>? customDirections,
     double springStiffnessKnMm = 500.0,
@@ -1186,23 +1343,29 @@ class TrussModelData {
         ? List<SupportDirection>.from(customDirections)
         : List<SupportDirection>.filled(defSup.length, SupportDirection.auto);
     final fixed = fixedDofsFromSupports(supports);
-    final effectiveA = customSection != null ? customSection.computedAreaMm2(sectionShape) : aMm2;
+    final usePerElem = elementSections != null && elementSections.length == defaultElemCountFor(preset);
+    final effectiveA = (!usePerElem && customSection != null)
+        ? customSection.computedAreaMm2(sectionShape)
+        : aMm2;
+    final resolvedSecList = usePerElem
+        ? List<ElementSectionConfig>.from(elementSections)
+        : const <ElementSectionConfig>[];
+    final primaryShape = usePerElem ? elementSections.first.shape : sectionShape;
 
     switch (preset) {
       case TrussPreset.dahlblomEx91:
+        const conn91 = [
+          [1, 3],
+          [2, 3],
+        ];
+        final coords91 = _resolveCoords(defaultCoordsFor(preset, lMm), customCoords, conn91);
+        final areas91 = _resolveAreas(const [2000.0, 500.0], usePerElem ? elementSections : null);
         return TrussModelData(
           name: 'Dahlblom Example 9.1',
           description: 'Ví dụ kiểm chứng phi tuyến bar2g (Dahlblom 2016, tr. 260-261)',
-          coords: const [
-            [0.0, 0.0],
-            [0.0, 1200.0],
-            [1600.0, 0.0],
-          ],
-          conn: const [
-            [1, 3],
-            [2, 3],
-          ],
-          areas: const [2000.0, 500.0],
+          coords: coords91,
+          conn: conn91,
+          areas: areas91,
           E: 200000.0,
           nu: nu,
           fyRef: 355.0,
@@ -1213,28 +1376,27 @@ class TrussModelData {
           fRef: const [0.0, 0.0, 0.0, 0.0, -10.0e6, -0.2e6],
           memberLabels: const ['1-3 (AB)', '2-3 (CB)'],
           nodeLabels: _buildNodeLabels(const ['Nút 1 (A)', 'Nút 2 (C)', 'Nút 3 (B)'], supports),
-          sectionShape: sectionShape,
-          customSection: customSection,
+          sectionShape: primaryShape,
+          customSection: usePerElem ? null : customSection,
+          elementSections: resolvedSecList,
           baseL: 1600.0,
-          baseA: 2000.0,
+          baseA: areas91[0],
           basePKn: 10000.0,
         );
       case TrussPreset.calfemExs3:
+        const connEx3 = [
+          [1, 3],
+          [3, 4],
+          [2, 3],
+        ];
+        final coordsEx3 = _resolveCoords(defaultCoordsFor(preset, lMm), customCoords, connEx3);
+        final areasEx3 = _resolveAreas(const [600.0, 300.0, 1000.0], usePerElem ? elementSections : null);
         return TrussModelData(
           name: 'CALFEM 3.4 exs3.m',
           description: 'Ví dụ chuẩn CALFEM 3.4 exs3 (calfem34.pdf tr. 9.3-9..12)',
-          coords: const [
-            [0.0, 0.0],
-            [0.0, 1200.0],
-            [1600.0, 0.0],
-            [1600.0, 1200.0],
-          ],
-          conn: const [
-            [1, 3],
-            [3, 4],
-            [2, 3],
-          ],
-          areas: const [600.0, 300.0, 1000.0],
+          coords: coordsEx3,
+          conn: connEx3,
+          areas: areasEx3,
           E: 200000.0,
           nu: nu,
           fyRef: 250.0,
@@ -1245,26 +1407,26 @@ class TrussModelData {
           fRef: const [0.0, 0.0, 0.0, 0.0, 0.0, -80000.0, 0.0, 0.0],
           memberLabels: const ['1-3', '3-4', '2-3'],
           nodeLabels: _buildNodeLabels(const ['Nút 1', 'Nút 2', 'Nút 3', 'Nút 4'], supports),
-          sectionShape: sectionShape,
-          customSection: customSection,
+          sectionShape: primaryShape,
+          customSection: usePerElem ? null : customSection,
+          elementSections: resolvedSecList,
           baseL: 1600.0,
-          baseA: 600.0,
+          baseA: areasEx3[0],
           basePKn: 80.0,
         );
       case TrussPreset.vonMisesArch:
+        const connVM = [
+          [1, 2],
+          [2, 3],
+        ];
+        final coordsVM = _resolveCoords(defaultCoordsFor(preset, lMm), customCoords, connVM);
+        final areasVM = _resolveAreas([effectiveA, effectiveA], usePerElem ? elementSections : null);
         return TrussModelData(
           name: 'Vòm Von Mises 2 thanh',
           description: 'Vòm dàn nông 2 thanh minh họa bật nhảy Snap-Through (McGuire Ex 9.2)',
-          coords: [
-            [0.0, 0.0],
-            [lMm, 0.2 * lMm],
-            [2.0 * lMm, 0.0],
-          ],
-          conn: const [
-            [1, 2],
-            [2, 3],
-          ],
-          areas: [effectiveA, effectiveA],
+          coords: coordsVM,
+          conn: connVM,
+          areas: areasVM,
           E: eMpa,
           nu: nu,
           fyRef: 250.0,
@@ -1275,33 +1437,35 @@ class TrussModelData {
           fRef: [0.0, 0.0, 0.0, -pKn * 1000.0, 0.0, 0.0],
           memberLabels: const ['1-2', '2-3'],
           nodeLabels: _buildNodeLabels(const ['Nút 1', 'Nút 2', 'Nút 3'], supports),
-          sectionShape: sectionShape,
-          customSection: customSection,
+          sectionShape: primaryShape,
+          customSection: usePerElem ? null : customSection,
+          elementSections: resolvedSecList,
           baseL: lMm,
-          baseA: effectiveA,
+          baseA: areasVM[0],
           basePKn: pKn,
         );
       case TrussPreset.assignment5Bar:
+        const conn5 = [
+          [1, 2],
+          [1, 3],
+          [3, 4],
+          [3, 2],
+          [2, 4],
+        ];
+        final coords5 = _resolveCoords(defaultCoordsFor(preset, lMm), customCoords, conn5);
         final diagA = 2.0 * math.sqrt(2.0) * effectiveA;
+        final areas5 = _resolveAreas(
+          [effectiveA, effectiveA, effectiveA, diagA, diagA],
+          usePerElem ? elementSections : null,
+        );
         return TrussModelData(
           name: 'Dàn 4 nút – 5 thanh (Đề bài 1.jpg)',
           description:
               'L=${lMm.toStringAsFixed(0)} mm, E=${(eMpa / 1000).toStringAsFixed(0)} GPa, '
               'A=${effectiveA.toStringAsFixed(0)} mm², P=${pKn.toStringAsFixed(1)} kN hướng lên (+Y)',
-          coords: [
-            [0.0, 0.0],
-            [lMm, 0.0],
-            [0.0, lMm],
-            [2.0 * lMm, lMm],
-          ],
-          conn: const [
-            [1, 2],
-            [1, 3],
-            [3, 4],
-            [3, 2],
-            [2, 4],
-          ],
-          areas: [effectiveA, effectiveA, effectiveA, diagA, diagA],
+          coords: coords5,
+          conn: conn5,
+          areas: areas5,
           E: eMpa,
           nu: nu,
           fyRef: 250.0,
@@ -1312,8 +1476,9 @@ class TrussModelData {
           fRef: [0.0, 0.0, 0.0, pKn * 1000.0, 0.0, 0.0, 0.0, 0.0],
           memberLabels: const ['1-2', '1-3', '3-4', '3-2', '2-4'],
           nodeLabels: _buildNodeLabels(const ['Nút 1', 'Nút 2', 'Nút 3', 'Nút 4'], supports),
-          sectionShape: sectionShape,
-          customSection: customSection,
+          sectionShape: primaryShape,
+          customSection: usePerElem ? null : customSection,
+          elementSections: resolvedSecList,
           baseL: lMm,
           baseA: effectiveA,
           basePKn: pKn,
