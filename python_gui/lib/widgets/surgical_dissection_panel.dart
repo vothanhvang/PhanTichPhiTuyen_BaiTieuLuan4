@@ -32,6 +32,7 @@ class SurgicalDissectionPanel extends StatelessWidget {
   final double zetaNorm;
   final double imperfectionRatio;
   final bool darkMode;
+  final List<MemberDesignCheck>? designChecks;
   final ValueChanged<int> onElemChanged;
   final ValueChanged<double> onXiChanged;
   final void Function(double eta, double zeta) onFiberChanged;
@@ -49,6 +50,7 @@ class SurgicalDissectionPanel extends StatelessWidget {
     required this.zetaNorm,
     required this.imperfectionRatio,
     required this.darkMode,
+    this.designChecks,
     required this.onElemChanged,
     required this.onXiChanged,
     required this.onFiberChanged,
@@ -226,27 +228,81 @@ class SurgicalDissectionPanel extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Builder(builder: (_) {
-                final shapeE = model.sectionShapeForElem(selectedElem);
-                final d = model.sectionDimsForElem(selectedElem);
-                final l0 = model.initialLength(selectedElem.clamp(0, model.nElems - 1));
-                return Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: darkMode ? const Color(0xFF0A1426) : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: border),
-                  ),
-                  child: Text(
-                    '${d.formatSpec(shapeE)}  •  L₀=${l0.toStringAsFixed(1)} mm\n'
-                    'A=${d.areaMm2.toStringAsFixed(0)} mm²  •  Ix=${(d.ix / 1e4).toStringAsFixed(1)}  •  Iy=${(d.iy / 1e4).toStringAsFixed(1)} cm⁴  •  i=${d.rGyrationMin.toStringAsFixed(1)} mm',
-                    style: TextStyle(
-                      fontSize: 9.7,
-                      height: 1.35,
-                      fontFamily: 'DejaVuSansMono',
-                      color: darkMode ? const Color(0xFFBAE6FD) : const Color(0xFF0F3D6E),
+                final eSafe = selectedElem.clamp(0, model.nElems - 1);
+                final shapeE = model.sectionShapeForElem(eSafe);
+                final d = model.sectionDimsForElem(eSafe);
+                final l0 = model.initialLength(eSafe);
+                final checks = designChecks ?? CalfemNonlinearEngine.checkMembers(model, resultNL);
+                final chk = eSafe < checks.length ? checks[eSafe] : null;
+                final isRot = d.rotationDeg.abs() > 0.05;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: darkMode ? const Color(0xFF0A1426) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: border),
+                      ),
+                      child: Text(
+                        '${d.formatSpec(shapeE)}  •  L₀=${l0.toStringAsFixed(1)} mm\n'
+                        'A=${d.areaMm2.toStringAsFixed(0)} mm²  •  ${isRot ? "Ix(β)" : "Ix"}=${(d.ixRotated / 1e4).toStringAsFixed(1)}  •  ${isRot ? "Iy(β)" : "Iy"}=${(d.iyRotated / 1e4).toStringAsFixed(1)} cm⁴  •  i=${d.rGyrationMin.toStringAsFixed(1)} mm',
+                        style: TextStyle(
+                          fontSize: 9.7,
+                          height: 1.35,
+                          fontFamily: 'DejaVuSansMono',
+                          color: darkMode ? const Color(0xFFBAE6FD) : const Color(0xFF0F3D6E),
+                        ),
+                      ),
                     ),
-                  ),
+                    if (chk != null) ...[
+                      const SizedBox(height: 5),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: (chk.passed ? const Color(0xFF10B981) : const Color(0xFFF43F5E))
+                              .withValues(alpha: darkMode ? 0.16 : 0.10),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: (chk.passed ? const Color(0xFF10B981) : const Color(0xFFF43F5E))
+                                .withValues(alpha: 0.55),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              chk.passed ? Icons.verified_outlined : Icons.warning_amber_rounded,
+                              size: 14,
+                              color: chk.passed ? const Color(0xFF10B981) : const Color(0xFFF43F5E),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'TCVN 5575 / EC3: λ=${chk.slenderness.toStringAsFixed(1)} • ${chk.governingMode} • U=${chk.utilizationPct.toStringAsFixed(1)}%',
+                                style: TextStyle(
+                                  fontSize: 9.6,
+                                  fontWeight: FontWeight.w600,
+                                  color: darkMode ? const Color(0xFFE2E8F0) : const Color(0xFF0F172A),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Text(
+                              chk.passed ? 'ĐẠT' : 'VƯỢT',
+                              style: TextStyle(
+                                fontSize: 9.8,
+                                fontWeight: FontWeight.bold,
+                                color: chk.passed ? const Color(0xFF10B981) : const Color(0xFFF43F5E),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 );
               }),
               const SizedBox(height: 4),
@@ -259,14 +315,16 @@ class SurgicalDissectionPanel extends StatelessWidget {
                 height: 238,
                 child: LayoutBuilder(
                   builder: (context, cons) {
+                    final shapeE = model.sectionShapeForElem(selectedElem);
                     final d = model.sectionDimsForElem(selectedElem);
+                    final bnd = d.rotatedBounds(shapeE);
                     void pick(Offset local) {
                       final cx = cons.maxWidth * 0.36;
                       final cy = cons.maxHeight * 0.48;
                       final halfMax = math.min(cons.maxWidth * 0.58, cons.maxHeight) * 0.34;
-                      final maxDim = math.max(1e-3, math.max(d.height, d.width));
-                      final halfX = math.max(halfMax * 0.24, halfMax * (d.width / maxDim));
-                      final halfY = math.max(halfMax * 0.24, halfMax * (d.height / maxDim));
+                      final maxDim = math.max(1e-3, math.max(bnd.height, bnd.width));
+                      final halfX = math.max(halfMax * 0.24, halfMax * (bnd.width / maxDim));
+                      final halfY = math.max(halfMax * 0.24, halfMax * (bnd.height / maxDim));
                       final zN = ((local.dx - cx) / halfX).clamp(-1.0, 1.0);
                       final eN = (-(local.dy - cy) / halfY).clamp(-1.0, 1.0);
                       onFiberChanged(eN, zN);
@@ -427,22 +485,24 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
     required this.darkMode,
   });
 
-  bool _inside(double eta, double zeta, SectionDimensions dims) {
-    final xMm = zeta * 0.5 * dims.width;
-    final yMm = eta * 0.5 * dims.height;
-    return dims.containsLocalPoint(model.sectionShapeForElem(elemIndex), xMm, yMm);
+  bool _inside(double eta, double zeta, SectionShape shapeE, SectionDimensions dims, ({double width, double height}) bnd) {
+    final xMm = zeta * 0.5 * bnd.width;
+    final yMm = eta * 0.5 * bnd.height;
+    return dims.containsRotatedPoint(shapeE, xMm, yMm);
   }
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Bố trí mặt cắt bên trái (0..68%) theo ĐÚNG tỷ lệ thực H:B và biểu đồ σ(η) động bên phải (70..98%)
+    // Bố trí mặt cắt bên trái (0..68%) theo ĐÚNG tỷ lệ thực H:B sau khi xoay góc β và biểu đồ σ(η) động bên phải
+    final shapeE = model.sectionShapeForElem(elemIndex);
     final dims = model.sectionDimsForElem(elemIndex);
+    final bnd = dims.rotatedBounds(shapeE);
     final cx0 = size.width * 0.36;
     final cy0 = size.height * 0.48;
     final halfMax = math.min(size.width * 0.58, size.height) * 0.34;
-    final maxDim = math.max(1e-3, math.max(dims.height, dims.width));
-    final halfX = math.max(halfMax * 0.24, halfMax * (dims.width / maxDim));
-    final halfY = math.max(halfMax * 0.24, halfMax * (dims.height / maxDim));
+    final maxDim = math.max(1e-3, math.max(bnd.height, bnd.width));
+    final halfX = math.max(halfMax * 0.24, halfMax * (bnd.width / maxDim));
+    final halfY = math.max(halfMax * 0.24, halfMax * (bnd.height / maxDim));
 
     // 1. Tính biên độ ứng suất CỐ ĐỊNH TOÀN THANH tại giữa nhịp (ξ = 0.50)
     //    (Không chuẩn hóa cục bộ theo ξ -> khi kéo ξ từ 0 → 0.5 → 1, màu nhiệt
@@ -535,7 +595,7 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
       final py = cy - eta * halfY * basePoisson;
       for (int iz = 0; iz < nGrid; iz++) {
         final zeta = -1.0 + 2.0 * (iz + 0.5) / nGrid;
-        if (!_inside(eta, zeta, dims)) continue;
+        if (!_inside(eta, zeta, shapeE, dims, bnd)) continue;
         final px = cx0 + zeta * halfX * rowScaleX;
         canvas.drawRect(
           Rect.fromCenter(center: Offset(px, py), width: cellW, height: cellH),
@@ -544,7 +604,7 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
       }
     }
 
-    // Đường viền mặt cắt HIỆN TẠI (đã dịch theo võng P-δ và co/phình ngang Poisson theo ξ)
+    // Đường viền mặt cắt HIỆN TẠI (đã xoay góc β, dịch theo võng P-δ và co/phình ngang Poisson theo ξ)
     _drawDeformedOutline(
       canvas,
       cx0,
@@ -560,19 +620,19 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
         ..strokeWidth = 1.8,
     );
 
-    // Nhãn kích thước phủ bì H & W ngay trên hình cắt (tách khỏi mũi tên δ(ξ) bên trái)
+    // Nhãn kích thước phủ bì sau khi xoay H & W ngay trên hình cắt
     final dimTextCol = darkMode ? const Color(0xFF94A3B8) : const Color(0xFF475569);
     _paintText(
       canvas,
-      'H=${dims.height.toStringAsFixed(0)}',
+      'H=${bnd.height.toStringAsFixed(0)}',
       Offset(cx0 + halfX * basePoisson + 5, cy - 6),
       dimTextCol,
       8.2,
     );
     _paintText(
       canvas,
-      'W=${dims.width.toStringAsFixed(0)} mm',
-      Offset(cx0 - 22, math.min(size.height - 29, cy + halfY * basePoisson + 3)),
+      'W=${bnd.width.toStringAsFixed(0)} mm${dims.rotationDeg.abs() > 0.05 ? " ↻${dims.rotationDeg.toStringAsFixed(0)}°" : ""}',
+      Offset(cx0 - 26, math.min(size.height - 29, cy + halfY * basePoisson + 3)),
       dimTextCol,
       8.2,
     );
@@ -712,11 +772,30 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
     }
 
     final shapeE = model.sectionShapeForElem(elemIndex);
+    void drawCircleOrientTick() {
+      if (dims.rotationDeg.abs() <= 0.05) return;
+      final rad = dims.rotationDeg * math.pi / 180.0;
+      // Tia đánh dấu trục chuẩn xoay β° cho mặt cắt tròn / ống tròn
+      final tip = Offset(
+        cx + math.cos(rad - math.pi / 2) * halfX * baseScale,
+        cy + math.sin(rad - math.pi / 2) * halfY * baseScale,
+      );
+      canvas.drawLine(
+        Offset(cx, cy),
+        tip,
+        Paint()
+          ..color = const Color(0xFFF59E0B)
+          ..strokeWidth = 1.6,
+      );
+      canvas.drawCircle(tip, 2.8, Paint()..color = const Color(0xFFF59E0B));
+    }
+
     if (shapeE == SectionShape.solidRod) {
       canvas.drawOval(
         Rect.fromCenter(center: Offset(cx, cy), width: 2 * halfX * baseScale, height: 2 * halfY * baseScale),
         p,
       );
+      drawCircleOrientTick();
       return;
     }
     if (shapeE == SectionShape.circTube) {
@@ -733,12 +812,14 @@ class _CrossSectionSurgicalPainter extends CustomPainter {
         ),
         p,
       );
+      drawCircleOrientTick();
       return;
     }
 
-    final hwMm = math.max(1e-6, 0.5 * dims.width);
-    final hhMm = math.max(1e-6, 0.5 * dims.height);
-    final polys = dims.outlinePolygonsMm(shapeE, includeInnerHole: true);
+    final bnd = dims.rotatedBounds(shapeE);
+    final hwMm = math.max(1e-6, 0.5 * bnd.width);
+    final hhMm = math.max(1e-6, 0.5 * bnd.height);
+    final polys = dims.rotatedOutlinePolygonsMm(shapeE, includeInnerHole: true);
     for (final poly in polys) {
       if (poly.length < 3) continue;
       final path = Path();

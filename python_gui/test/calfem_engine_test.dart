@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:calfem_nonlinear_truss/core/calfem_engine.dart';
 import 'package:calfem_nonlinear_truss/core/connection_calculator.dart';
+import 'package:calfem_nonlinear_truss/core/project_serializer.dart';
 
 void main() {
   test('Dart CALFEM Engine khớp 100% Python & Dahlblom Ex 9.1 & Đề bài 5 thanh', () {
@@ -237,5 +238,172 @@ void main() {
     expect(rMixed.sumFyN.abs(), lessThan(1e-4));
     expect(rMixed.sumMNmm.abs(), lessThan(1e-1));
     expect(rMixed.maxFreeResidualN, lessThan(1e-5));
+
+    // 7. Kiểm chứng XOAY TIẾT DIỆN 0..360° quanh trục dọc thanh cho TOÀN BỘ 12 tiết diện!
+    for (final shape in SectionShape.values) {
+      final base = CustomSectionGeometry.presetsFor(shape).first.$2.toDimensions(shape, rotationDeg: 0.0);
+      final rot90 = base.withRotation(90.0);
+      final rot180 = base.withRotation(180.0);
+      final rot45 = base.withRotation(45.0);
+      // Xoay 90°: Ix(90°) == Iy(0°), Iy(90°) == Ix(0°); I_x + I_y bất biến (vòng tròn Mohr)!
+      expect(rot90.ixRotated, closeTo(base.iy, 1e-3));
+      expect(rot90.iyRotated, closeTo(base.ix, 1e-3));
+      expect(rot45.ixRotated + rot45.iyRotated, closeTo(base.ix + base.iy, 1e-3));
+      expect(rot180.ixRotated, closeTo(base.ix, 1e-3));
+      // Xoay 180° trên 2L: đa giác lật ngược (-x, -y) chính xác tuyệt đối
+      if (shape == SectionShape.doubleAngle) {
+        final p0 = base.rotatedOutlinePolygonsMm(shape);
+        final p180 = rot180.rotatedOutlinePolygonsMm(shape);
+        expect(p180.length, 2);
+        expect(p180[0][0][0], closeTo(-p0[0][0][0], 1e-6));
+        expect(p180[0][0][1], closeTo(-p0[0][0][1], 1e-6));
+        // Điểm trên cánh ngang của 2L nằm ở y < 0 khi 0° và nằm ở y > 0 khi xoay 180°!
+        final yFlange = -0.5 * base.height + 0.5 * base.tf;
+        final xFlange = 0.5 * base.gap + 0.5 * base.legWidth;
+        expect(base.containsRotatedPoint(shape, xFlange, yFlange), isTrue);
+        expect(rot180.containsRotatedPoint(shape, xFlange, yFlange), isFalse);
+        expect(rot180.containsRotatedPoint(shape, -xFlange, -yFlange), isTrue);
+        expect(rot180.formatSpec(shape), contains('↻180°'));
+      }
+      // Xoay 90° đổi khung bao width <-> height cho mặt cắt không tròn
+      if (shape != SectionShape.solidRod && shape != SectionShape.circTube) {
+        final b0 = base.rotatedBounds(shape);
+        final b90 = rot90.rotatedBounds(shape);
+        expect(b90.width, closeTo(b0.height, 1e-3));
+        expect(b90.height, closeTo(b0.width, 1e-3));
+      }
+    }
+
+    // 8. Kiểm chứng 4 mô hình dàn công nghiệp mới (Pratt, Warren, Mái Fink, Công-xôn)
+    for (final preset in const [
+      TrussPreset.prattTruss,
+      TrussPreset.warrenTruss,
+      TrussPreset.roofFinkTruss,
+      TrussPreset.cantileverTruss,
+    ]) {
+      final m = TrussModelData.create(preset: preset, lMm: 2000.0, pKn: 120.0);
+      final rL = CalfemNonlinearEngine.solveLinear(m);
+      final rN = CalfemNonlinearEngine.solveFullNR(m, isTotalLagrangian: false, nSteps: 6);
+      expect(rN.converged, isTrue, reason: '${preset.code} must converge');
+      expect(rN.sumFxN.abs(), lessThan(1e-3));
+      expect(rN.sumFyN.abs(), lessThan(1e-3));
+      expect(rN.sumMNmm.abs(), lessThan(1.0));
+      expect(rN.iterResidualsN.length, greaterThanOrEqualTo(2));
+
+      // Kiểm tra TCVN 5575 / EN 1993-1-1 & Trị riêng mất ổn định
+      final chks = CalfemNonlinearEngine.checkMembers(m, rN);
+      expect(chks.length, m.nElems);
+      expect(chks.every((c) => c.slenderness > 0 && c.chiBuckling > 0 && c.chiBuckling <= 1.0), isTrue);
+      final buck = CalfemNonlinearEngine.solveElasticBuckling(m, rL);
+      expect(buck.hasBucklingMode, isTrue);
+      expect(buck.alphaCr, greaterThan(0.0));
+    }
+
+    // 9. Kiểm chứng Trị riêng mất ổn định khớp chính xác Python trên đề bài 5 thanh (α_cr ≈ 1663.45)
+    final buck5 = CalfemNonlinearEngine.solveElasticBuckling(m5, lin);
+    expect(buck5.hasBucklingMode, isTrue);
+    expect(buck5.alphaCr, closeTo(1663.45, 1.5));
+
+    // 10. Kiểm chứng Phi tuyến Vật liệu Đàn-Dẻo (GMNIA) khi ứng suất vượt fy
+    final mPlastic = TrussModelData.create(
+      preset: TrussPreset.assignment5Bar,
+      yieldFyMpa: 250.0,
+      materialNonlinear: true,
+      hardeningRatio: 0.02,
+    );
+    final rElasticHigh = CalfemNonlinearEngine.solveFullNR(m5, isTotalLagrangian: false, loadFactor: 8.0, nSteps: 10);
+    final rPlasticHigh = CalfemNonlinearEngine.solveFullNR(mPlastic, isTotalLagrangian: false, loadFactor: 8.0, nSteps: 10);
+    expect(rPlasticHigh.converged, isTrue);
+    expect(rPlasticHigh.yieldedElems.any((y) => y), isTrue);
+    // Do chảy dẻo giảm độ cứng xuống Et = 0.02E, chuyển vị u2y của GMNIA lớn hơn đáng kể so với đàn hồi thuần!
+    expect(rPlasticHigh.uMm[3].abs(), greaterThan(rElasticHigh.uMm[3].abs() * 1.5));
+
+    // 11. Kiểm chứng Custom Truss Builder (thêm nút + thanh + tải nhiều nút) & ProjectSnapshot JSON round-trip
+    final snap = ProjectSnapshot(
+      preset: TrussPreset.prattTruss,
+      method: SolverMethod.corotationalNR,
+      lMm: 1500.0,
+      eGpa: 210.0,
+      aMm2: 2400.0,
+      pKn: 150.0,
+      fyMpa: 355.0,
+      materialNonlinear: true,
+      hardeningRatio: 0.03,
+      loadFactor: 2.5,
+      nSteps: 12,
+      customCoords: const [
+        [0.0, 0.0],
+        [1500.0, 0.0],
+        [3000.0, 0.0],
+        [1500.0, 1200.0],
+      ],
+      customConn: const [
+        [1, 2],
+        [2, 3],
+        [1, 4],
+        [2, 4],
+        [3, 4],
+      ],
+      customNodalLoadsKn: const [
+        [0.0, 0.0],
+        [25.0, -80.0],
+        [0.0, 0.0],
+        [10.0, -120.0],
+      ],
+      elemSections: const [
+        ElementSectionConfig(shape: SectionShape.doubleAngle, customGeometry: twoL90, rotationDeg: 180.0),
+        ElementSectionConfig(shape: SectionShape.channelC, rotationDeg: 90.0),
+        ElementSectionConfig(shape: SectionShape.iSection, rotationDeg: 45.0),
+        ElementSectionConfig(shape: SectionShape.boxSection, rotationDeg: 0.0),
+        ElementSectionConfig(shape: SectionShape.angleL, rotationDeg: 270.0),
+      ],
+      nodeSupports: const [
+        NodeSupportType.pin,
+        NodeSupportType.free,
+        NodeSupportType.rollerX,
+        NodeSupportType.free,
+      ],
+      supportDirections: const [
+        SupportDirection.bottom,
+        SupportDirection.auto,
+        SupportDirection.bottom,
+        SupportDirection.auto,
+      ],
+      springStiffnessKnMm: 750.0,
+      connParams: const ConnectionDesignParams(detailType: ConnectionDetailType.weldedGusset, steelGrade: SteelGrade.s355),
+    );
+    final decoded = ProjectSnapshot.tryFromJsonString(snap.toJsonString());
+    expect(decoded, isNotNull);
+    expect(decoded!.preset, TrussPreset.prattTruss);
+    expect(decoded.fyMpa, closeTo(355.0, 1e-6));
+    expect(decoded.materialNonlinear, isTrue);
+    expect(decoded.elemSections.length, 5);
+    expect(decoded.elemSections[0].shape, SectionShape.doubleAngle);
+    expect(decoded.elemSections[0].rotationDeg, closeTo(180.0, 1e-6));
+    expect(decoded.elemSections[4].rotationDeg, closeTo(270.0, 1e-6));
+    expect(decoded.customNodalLoadsKn![1][0], closeTo(25.0, 1e-6));
+    expect(decoded.customConn!.length, 5);
+
+    final mSnap = TrussModelData.create(
+      preset: decoded.preset,
+      lMm: decoded.lMm,
+      eMpa: decoded.eGpa * 1000.0,
+      aMm2: decoded.aMm2,
+      pKn: decoded.pKn,
+      yieldFyMpa: decoded.fyMpa,
+      materialNonlinear: decoded.materialNonlinear,
+      hardeningRatio: decoded.hardeningRatio,
+      elementSections: decoded.elemSections,
+      customCoords: decoded.customCoords,
+      customConn: decoded.customConn,
+      customNodalLoadsKn: decoded.customNodalLoadsKn,
+      customSupports: decoded.nodeSupports,
+      customDirections: decoded.supportDirections,
+      springStiffnessKnMm: decoded.springStiffnessKnMm,
+    );
+    final rSnap = CalfemNonlinearEngine.solveFullNR(mSnap, isTotalLagrangian: false, loadFactor: 1.0, nSteps: 8);
+    expect(rSnap.converged, isTrue);
+    expect(rSnap.sumFxN.abs(), lessThan(1e-3));
+    expect(rSnap.sumFyN.abs(), lessThan(1e-3));
   });
 }

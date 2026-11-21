@@ -1,20 +1,14 @@
 // ============================================================================
-// CỬA SỔ MÔ PHỎNG 3D CHUẨN ANSYS MECHANICAL (PHONG LIGHTING + PHẪU THUẬT 3D)
+// CỬA SỔ MÔ PHỎNG 3D KẾT CẤU THÉP (PHONG LIGHTING + PHẪU THUẬT 3D)
 // ============================================================================
-// Trình kết xuất 3D thuần Flutter Canvas siêu mượt 60-120 FPS (hoạt động hoàn hảo
-// trên Windows .exe, Android Xiaomi Pad 8 Pro / 13T Pro, và GitHub Web):
-//   • Dựng khối 3D thật cho từng thanh dàn theo đúng tiết diện đang chọn
-//     (Thép chữ I, Ống tròn rỗng, Hộp vuông, Thanh tròn đặc) + khớp bản lề 3D.
-//   • Chiếu sáng 3D Lambert + Blinn-Phong + sắp xếp chiều sâu Z-Buffer (Painter).
-//   • Điều khiển y hệt ANSYS:
+// Trình kết xuất 3D Canvas siêu mượt 60-120 FPS đa nền tảng (Windows / Android / Web):
+//   • Dựng khối 3D thật cho 12 tiết diện thép (có xoay góc β 0..360° quanh trục thanh!).
+//   • Chiếu sáng 3D Lambert + Blinn-Phong + sắp xếp chiều sâu Z-Buffer.
+//   • Điều khiển tương tác trực tiếp:
 //       - Kéo trái / 1 ngón : Xoay tự do 360° (Orbit Rotate)
 //       - Kéo phải / nút Pan: Di chuyển mặt phẳng nhìn (Pan)
 //       - Cuộn chuột / Chụm : Phóng to / Thu nhỏ (Zoom)
-//       - Nút góc nhìn chuẩn: ISO 3D | Mặt XY | Trên XZ | Cạnh YZ | Fit All
-//   • CHẾ ĐỘ PHẪU THUẬT 3D (3D SECTION CUT):
-//       - Hiển thị mặt phẳng dao cắt phát sáng màu xanh lơ xuyên đúng vị trí ξ.
-//       - Cắt lìa phần sau thanh (làm trong suốt) để NHÌN TRỰC TIẾP VÀO BÊN TRONG
-//         lõi tiết diện cùng mũi tên ứng suất pháp thớ bên trong!
+//       - Chạm nút / thanh  : Chọn nút (Liên kết) hoặc cắt phẫu thuật thanh 3D
 // ============================================================================
 
 import 'dart:math' as math;
@@ -31,6 +25,7 @@ class AnsysViewport3D extends StatefulWidget {
   final double deformScale;
   final double playbackFraction;
   final int selectedElem;
+  final int? selectedNode;
   final double probeXi;
   final bool surgicalMode;
   final bool darkMode;
@@ -38,7 +33,9 @@ class AnsysViewport3D extends StatefulWidget {
   final ValueChanged<bool>? onToggleColorBar;
   final ConnectionDisplayMode connectionMode;
   final ConnectionDetailType connectionType;
+  final List<MemberDesignCheck>? designChecks;
   final void Function(int elemIndex, double xi) onProbeChanged;
+  final ValueChanged<int>? onNodeTapped;
 
   const AnsysViewport3D({
     super.key,
@@ -48,6 +45,7 @@ class AnsysViewport3D extends StatefulWidget {
     required this.deformScale,
     required this.playbackFraction,
     required this.selectedElem,
+    this.selectedNode,
     required this.probeXi,
     required this.surgicalMode,
     required this.darkMode,
@@ -55,7 +53,9 @@ class AnsysViewport3D extends StatefulWidget {
     this.onToggleColorBar,
     this.connectionMode = ConnectionDisplayMode.schematic,
     this.connectionType = ConnectionDetailType.boltedGusset,
+    this.designChecks,
     required this.onProbeChanged,
+    this.onNodeTapped,
   });
 
   @override
@@ -63,8 +63,8 @@ class AnsysViewport3D extends StatefulWidget {
 }
 
 class _AnsysViewport3DState extends State<AnsysViewport3D> {
-  double _yaw = -0.52;   // Góc xoay ngang mặc định kiểu ISO ANSYS
-  double _pitch = 0.32;  // Góc nghiêng nhìn từ trên xuống
+  double _yaw = -0.52;
+  double _pitch = 0.32;
   double _zoom = 1.05;
   Offset _pan = Offset.zero;
   bool _panMode = false;
@@ -79,6 +79,52 @@ class _AnsysViewport3DState extends State<AnsysViewport3D> {
       _pan = Offset.zero;
       _zoom = 1.05;
     });
+  }
+
+  void _fitView() {
+    setState(() {
+      _pan = Offset.zero;
+      _zoom = 1.05;
+    });
+  }
+
+  void _showControlsHelp(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.help_outline, color: Color(0xFF06B6D4), size: 20),
+            SizedBox(width: 8),
+            Text('Hướng dẫn điều khiển khung 3D & Phím tắt', style: TextStyle(fontSize: 14)),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('• Kéo chuột trái / 1 ngón: Xoay 360° quanh mô hình', style: TextStyle(fontSize: 12.2)),
+            SizedBox(height: 4),
+            Text('• Kéo chuột phải / giữa / 2 ngón: Dịch chuyển (Pan)', style: TextStyle(fontSize: 12.2)),
+            SizedBox(height: 4),
+            Text('• Cuộn chuột / Chụm 2 ngón: Phóng to / Thu nhỏ (Zoom)', style: TextStyle(fontSize: 12.2)),
+            SizedBox(height: 4),
+            Text('• Chạm trực tiếp vào THANH: Chọn thanh & di chuyển dao cắt Phẫu thuật', style: TextStyle(fontSize: 12.2)),
+            SizedBox(height: 4),
+            Text('• Chạm trực tiếp vào NÚT: Chọn nút & mở chi tiết Tab Liên kết', style: TextStyle(fontSize: 12.2)),
+            Divider(height: 16),
+            Text('Phím tắt nhanh:', style: TextStyle(fontSize: 12.2, fontWeight: FontWeight.bold)),
+            SizedBox(height: 4),
+            Text('• Space: Phát / Tạm dừng mô phỏng tăng tải', style: TextStyle(fontSize: 12)),
+            Text('• 2 / 3: Chuyển nhanh khung nhìn 2D ↔ 3D', style: TextStyle(fontSize: 12)),
+            Text('• Ctrl+Z / Ctrl+Y: Hoàn tác (Undo) / Làm lại (Redo)', style: TextStyle(fontSize: 12)),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Đóng')),
+        ],
+      ),
+    );
   }
 
   List<double> _fieldValues(double frac) {
@@ -108,18 +154,20 @@ class _AnsysViewport3DState extends State<AnsysViewport3D> {
           for (int e = 0; e < ne; e++)
             0.5 * widget.result.stressMpa[e] * widget.result.strain[e] * 1000.0 * frac * frac
         ];
+      case ContourField.utilizationRatio:
+        final checks = widget.designChecks ?? CalfemNonlinearEngine.checkMembers(widget.model, widget.result);
+        return [
+          for (int e = 0; e < ne; e++) (e < checks.length ? checks[e].utilizationPct : 0.0) * frac,
+        ];
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final vals = _fieldValues(widget.playbackFraction);
-    // Khóa cố định thang đo [minV, maxV] theo trạng thái 100% tải (frac = 1.0)
-    // để khi chạy mô phỏng video tăng tải (0% → 100%), dải màu Gradient 3D trên các thanh
-    // biến đổi sóng cầu vồng liên tục theo đúng mức tải tức thời!
     final fullVals = _fieldValues(1.0);
-    double minV = fullVals.reduce(math.min);
-    double maxV = fullVals.reduce(math.max);
+    double minV = fullVals.isEmpty ? 0.0 : fullVals.reduce(math.min);
+    double maxV = fullVals.isEmpty ? 1.0 : fullVals.reduce(math.max);
     if (widget.field == ContourField.displacement) {
       minV = 0.0;
       maxV = 0.0;
@@ -132,6 +180,9 @@ class _AnsysViewport3DState extends State<AnsysViewport3D> {
       }
     } else if (widget.field == ContourField.strainEnergyDensity) {
       minV = 0.0;
+    } else if (widget.field == ContourField.utilizationRatio) {
+      minV = 0.0;
+      maxV = math.max(100.0, maxV);
     } else {
       minV = math.min(0.0, minV);
       maxV = math.max(0.0, maxV);
@@ -166,8 +217,30 @@ class _AnsysViewport3DState extends State<AnsysViewport3D> {
               },
               child: GestureDetector(
                 onTapDown: (details) {
-                  // Chọn thanh & vị trí khảo sát ngay trong không gian 3D!
                   final scaleDef = widget.deformScale * widget.playbackFraction;
+                  // 1. Ưu tiên bắt chọn trực tiếp vào NÚT nếu nhấn gần nút (trong bán kính 22 px)
+                  if (widget.onNodeTapped != null) {
+                    int bestNode = -1;
+                    double bestNodeDist = 22.0;
+                    for (int i = 0; i < widget.model.nNodes; i++) {
+                      final pn = cam.project(_Vec3(
+                        widget.model.coords[i][0] + scaleDef * widget.result.uMm[2 * i],
+                        widget.model.coords[i][1] + scaleDef * widget.result.uMm[2 * i + 1],
+                        0,
+                      ));
+                      final d = (details.localPosition - pn.pt).distance;
+                      if (d < bestNodeDist) {
+                        bestNodeDist = d;
+                        bestNode = i;
+                      }
+                    }
+                    if (bestNode >= 0) {
+                      widget.onNodeTapped!(bestNode);
+                      return;
+                    }
+                  }
+
+                  // 2. Chọn thanh & vị trí khảo sát phẫu thuật ngay trong không gian 3D
                   int bestElem = widget.selectedElem;
                   double bestXi = widget.probeXi;
                   double bestDist = 38.0;
@@ -246,6 +319,7 @@ class _AnsysViewport3DState extends State<AnsysViewport3D> {
                       deformScale: widget.deformScale * widget.playbackFraction,
                       playbackFraction: widget.playbackFraction,
                       selectedElem: widget.selectedElem,
+                      selectedNode: widget.selectedNode,
                       probeXi: widget.probeXi,
                       surgicalMode: widget.surgicalMode,
                       darkMode: widget.darkMode,
@@ -278,12 +352,12 @@ class _AnsysViewport3DState extends State<AnsysViewport3D> {
                     ),
             ),
 
-            // Thanh điều khiển góc nhìn 3D chuẩn ANSYS góc trên phải
+            // Thanh điều khiển góc nhìn 3D góc trên phải (ISO / XY / XZ / YZ / Fit / Pan / Zoom)
             Positioned(
               right: 12,
               top: 12,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                 decoration: BoxDecoration(
                   color: widget.darkMode ? const Color(0xD90F172A) : const Color(0xE6FFFFFF),
                   borderRadius: BorderRadius.circular(10),
@@ -298,7 +372,8 @@ class _AnsysViewport3DState extends State<AnsysViewport3D> {
                     _camBtn('XY', () => _setCameraPreset(0.0, 0.0)),
                     _camBtn('XZ', () => _setCameraPreset(0.0, 1.40)),
                     _camBtn('YZ', () => _setCameraPreset(1.57, 0.0)),
-                    const SizedBox(width: 4),
+                    _camBtn('Fit', _fitView),
+                    const SizedBox(width: 2),
                     ChoiceChip(
                       label: Text(_panMode ? 'Pan' : 'Xoay 3D', style: const TextStyle(fontSize: 10.5)),
                       selected: _panMode,
@@ -322,22 +397,37 @@ class _AnsysViewport3DState extends State<AnsysViewport3D> {
               ),
             ),
 
-            // Gợi ý điều khiển 3D góc dưới trái
+            // Nút trợ giúp gọn nhẹ góc dưới trái (không che khuất mô hình)
             Positioned(
               left: 12,
               bottom: 10,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: widget.darkMode ? const Color(0xCC0F172A) : const Color(0xE6FFFFFF),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF06B6D4).withValues(alpha: 0.4)),
-                ),
-                child: Text(
-                  'Kéo trái/1 ngón: Xoay 3D  •  Kéo phải/2 ngón: Pan  •  Cuộn/Chụm: Zoom  •  Chạm thanh: Khảo sát & Phẫu thuật 3D',
-                  style: TextStyle(
-                    fontSize: 10.2,
-                    color: widget.darkMode ? const Color(0xFF94A3B8) : const Color(0xFF334155),
+              child: Tooltip(
+                message: 'Hướng dẫn thao tác 3D & phím tắt',
+                child: InkWell(
+                  onTap: () => _showControlsHelp(context),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: widget.darkMode ? const Color(0xCC0F172A) : const Color(0xE6FFFFFF),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFF06B6D4).withValues(alpha: 0.55)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.help_outline, size: 14, color: Color(0xFF06B6D4)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Thao tác 3D',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: widget.darkMode ? const Color(0xFFCBD5E1) : const Color(0xFF1E293B),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -448,7 +538,6 @@ class _Face3D {
   final List<_Vec3> verts;
   final Color baseColor;
   final double alpha;
-  final bool drawEdge;
   final Color edgeColor;
   final double depth;
   // Tùy chọn dải màu Gradient liên tục dọc trục thanh 3D (dùng cho Chuyển vị tổng ||u||)
@@ -461,7 +550,6 @@ class _Face3D {
     required this.baseColor,
     required this.depth,
     this.alpha = 1.0,
-    this.drawEdge = true,
     this.edgeColor = const Color(0x550F172A),
     this.gradStart,
     this.gradEnd,
@@ -480,6 +568,7 @@ class _Ansys3DPainter extends CustomPainter {
   final double deformScale;
   final double playbackFraction;
   final int selectedElem;
+  final int? selectedNode;
   final double probeXi;
   final bool surgicalMode;
   final bool darkMode;
@@ -497,6 +586,7 @@ class _Ansys3DPainter extends CustomPainter {
     required this.deformScale,
     required this.playbackFraction,
     required this.selectedElem,
+    this.selectedNode,
     required this.probeXi,
     required this.surgicalMode,
     required this.darkMode,
@@ -513,13 +603,18 @@ class _Ansys3DPainter extends CustomPainter {
     ];
   }
 
-  /// Tạo danh sách đa giác viền 2D (v, w) của mặt cắt ngang 3D theo đúng kích thước thực (H, B, tf, tw, s)
-  /// Trả về 2 đa giác tách rời (kèm khe hở bản mã) cho tiết diện ghép đôi 2L và 2C!
+  /// Hệ số thu phóng hình học hiển thị thống nhất giữa thanh 3D và bản mã nút 3D
+  double _visScaleFor(SectionShape shape, SectionDimensions dims) {
+    final bnd = dims.rotatedBounds(shape);
+    final maxDim = math.max(bnd.height, bnd.width);
+    return maxDim > 260.0 ? (260.0 / maxDim) * 0.95 : 0.95;
+  }
+
+  /// Tạo danh sách đa giác viền 2D (v, w) của mặt cắt ngang 3D theo đúng kích thước thực & góc xoay β (0..360°)
+  /// Hỗ trợ đầy đủ cả 12 tiết diện (gồm 2L, 2C tách rời có khe hở bản mã và xoay tự do quanh trục dọc thanh!).
   List<List<Offset>> _crossSectionPolygons(SectionShape shape, SectionDimensions dims) {
-    final maxDim = math.max(dims.height, dims.width);
-    // Giữ nguyên tỷ lệ hình học thực (H:B:tf:tw:s), chỉ giới hạn trần hiển thị nếu nhập quá lớn so với nhịp dàn
-    final visScale = maxDim > 260.0 ? (260.0 / maxDim) * 0.95 : 0.95;
-    final polysMm = dims.outlinePolygonsMm(shape, includeInnerHole: false);
+    final visScale = _visScaleFor(shape, dims);
+    final polysMm = dims.rotatedOutlinePolygonsMm(shape, includeInnerHole: false);
     return [
       for (final poly in polysMm)
         [
@@ -710,7 +805,8 @@ class _Ansys3DPainter extends CustomPainter {
         final axis = (p2 - p1).normalized();
         final vAxis = const _Vec3(0, 0, 1).cross(axis).normalized();
         final wAxis = const _Vec3(0, 0, 1);
-        final sz = math.min(280.0, math.max(dims.height, dims.width)) * 1.15;
+        final bndCut = dims.rotatedBounds(shapeE);
+        final sz = math.min(280.0, math.max(bndCut.height, bndCut.width)) * 1.15;
         final planeVerts = [
           pCut - vAxis * sz - wAxis * sz,
           pCut + vAxis * sz - wAxis * sz,
@@ -811,15 +907,13 @@ class _Ansys3DPainter extends CustomPainter {
         fillPaint.color = shadeColor(f.baseColor, shade, spec, f.alpha);
       }
       canvas.drawPath(path, fillPaint);
-      if (f.drawEdge) {
-        canvas.drawPath(
-          path,
-          Paint()
-            ..color = f.edgeColor
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 0.85,
-        );
-      }
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = f.edgeColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 0.85,
+      );
     }
 
     // 4b. Ký hiệu gối tựa 3D (Sơ đồ tính hoặc Chi tiết lò xo/neo bổ sung cho chế độ chi tiết chế tạo)
@@ -829,20 +923,30 @@ class _Ansys3DPainter extends CustomPainter {
       _drawFabricationOverlays3D(canvas, nodePos3D);
     }
 
-    // 5. Mũi tên lực ngoài P trong không gian 3D & mũi tên ứng suất nội tại mặt cắt phẫu thuật
+    // 5. Mũi tên ngoại lực (Fx, Fy) tại MỌI nút có tải trọng (tỷ lệ tương đối trực quan)
+    double maxNodeF = 1.0;
+    for (int i = 0; i < model.nNodes; i++) {
+      final mag = math.sqrt(model.fRef[2 * i] * model.fRef[2 * i] + model.fRef[2 * i + 1] * model.fRef[2 * i + 1]);
+      if (mag > maxNodeF) maxNodeF = mag;
+    }
     for (int i = 0; i < model.nNodes; i++) {
       final fx = model.fRef[2 * i], fy = model.fRef[2 * i + 1];
       if (fx.abs() > 1e-3 || fy.abs() > 1e-3) {
         final mag = math.sqrt(fx * fx + fy * fy);
+        final lenWorld = (190.0 + 170.0 * (mag / maxNodeF)).clamp(190.0, 360.0);
         final p0 = nodePos3D[i];
-        final pTip = p0 + _Vec3(fx / mag * 340.0, fy / mag * 340.0, 0);
+        final pTip = p0 + _Vec3(fx / mag * lenWorld, fy / mag * lenWorld, 0);
         final s0 = cam.project(p0).pt;
         final s1 = cam.project(pTip).pt;
-        _drawArrow(canvas, s0, s1, const Color(0xFFFF2E55), 3.6);
+        _drawArrow(canvas, s0, s1, const Color(0xFFFF2E55), 3.4);
+        final pShow = mag * playbackFraction / 1000.0;
+        final lbl = (fx.abs() > 1e-3 && fy.abs() > 1e-3)
+            ? 'P${i + 1}=${pShow.toStringAsFixed(1)} kN'
+            : 'P = ${pShow.toStringAsFixed(1)} kN';
         _drawLabel(
           canvas,
           s1 + const Offset(8, -14),
-          'P = ${(mag * playbackFraction / 1000).toStringAsFixed(1)} kN',
+          lbl,
           const Color(0xFFFF5A79),
         );
       }
@@ -879,8 +983,9 @@ class _Ansys3DPainter extends CustomPainter {
       );
     }
 
-    // 6b. Nhãn giá trị động trên từng thanh 3D (đồng bộ 100% với tùy chọn ContourField!)
+    // 6b. Nhãn giá trị động trên từng thanh 3D (gọn hơn tự động khi dàn ≥ 8 thanh để đỡ chồng chữ)
     final span3d = (maxVal - minVal).abs() < 1e-12 ? 1.0 : (maxVal - minVal);
+    final compactBadges = model.nElems >= 8;
     for (int e = 0; e < model.nElems; e++) {
       if (surgicalMode && e == selectedElem.clamp(0, model.nElems - 1)) continue;
       final p1 = nodePos3D[model.conn[e][0] - 1];
@@ -889,23 +994,50 @@ class _Ansys3DPainter extends CustomPainter {
       final sp = cam.project(mid3).pt;
       final midV = valueAt3D(e, 0.5);
       final tCol = ((midV - minVal) / span3d).clamp(0.0, 1.0);
+      final lbl = compactBadges
+          ? 'T${e + 1}:${midV.toStringAsFixed(1)}'
+          : 'T${e + 1}: ${field.formatValue(midV)}';
       _drawBadge3D(
         canvas,
         sp + Offset(0, e == 0 ? 16 : (e == 2 ? -16 : 0)),
-        'T${e + 1}: ${field.formatValue(midV)}',
+        lbl,
         ansysRainbowColor(tCol),
+        fontSize: compactBadges ? 8.1 : 9.2,
       );
     }
 
-    // 7. Nhãn tên các nút 3D (kèm ||u|| khi đang chọn hiển thị chuyển vị)
+    // 7. Nhãn tên các nút 3D (kèm ||u|| khi đang chọn hiển thị chuyển vị & vòng sáng nút đang chọn)
     for (int i = 0; i < model.nNodes; i++) {
       final pt = cam.project(nodePos3D[i]).pt;
+      if (selectedNode == i) {
+        canvas.drawCircle(
+          pt,
+          12.0,
+          Paint()
+            ..color = const Color(0xFF06B6D4).withValues(alpha: 0.25)
+            ..style = PaintingStyle.fill,
+        );
+        canvas.drawCircle(
+          pt,
+          12.0,
+          Paint()
+            ..color = const Color(0xFF00E5FF)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.0,
+        );
+      }
       final uNode = math.sqrt(math.pow(result.uMm[2 * i], 2) + math.pow(result.uMm[2 * i + 1], 2)) * playbackFraction;
       final nodeLbl = field == ContourField.displacement
           ? 'N${i + 1} (${uNode.toStringAsFixed(3)} mm)'
           : 'N${i + 1}';
-      _drawLabel(canvas, pt + const Offset(10, -14), nodeLbl,
-          darkMode ? Colors.white : const Color(0xFF0F172A));
+      _drawLabel(
+        canvas,
+        pt + const Offset(10, -14),
+        nodeLbl,
+        selectedNode == i
+            ? const Color(0xFF00E5FF)
+            : (darkMode ? Colors.white : const Color(0xFF0F172A)),
+      );
     }
 
     // 8. Hệ trục tọa độ 3D Triad kiểu ANSYS ở góc dưới phải
@@ -1027,20 +1159,54 @@ class _Ansys3DPainter extends CustomPainter {
       final isRight = model.coords[i][0] > midX + 1e-3;
 
       final hullPts = <Offset>[];
-      double maxHalfW = 52.0;
+      double maxZHalf = 42.0;
+      bool allTwinWithCenterGap = true;
+      double minCenterGapHalf = 999.0;
+      int connectedCount = 0;
 
+      // Vòng quét trước: xác định bề dày phương Z thực tế & khe hở bản mã trung tâm của 2L / 2C
+      final connectedInfo = <({int elem, Offset dir2, Offset perp2, double hw})>[];
       for (int e = 0; e < model.nElems; e++) {
         final n1 = model.conn[e][0] - 1;
         final n2 = model.conn[e][1] - 1;
         if (n1 != i && n2 != i) continue;
+        connectedCount++;
         final other = n1 == i ? n2 : n1;
         final dir3 = (nodePos3D[other] - p).normalized();
         final dir2 = Offset(dir3.x, dir3.y);
         final perp2 = Offset(-dir2.dy, dir2.dx);
+        final shapeE = model.sectionShapeForElem(e);
         final dims = model.sectionDimsForElem(e);
-        final hw = (dims.height * 0.55).clamp(45.0, 92.0);
-        maxHalfW = math.max(maxHalfW, hw);
+        final vs = _visScaleFor(shapeE, dims);
+        final bnd = dims.rotatedBounds(shapeE);
+        final hw = (0.5 * bnd.height * vs).clamp(40.0, 96.0);
+        final zHalf = (0.5 * bnd.width * vs).clamp(36.0, 128.0);
+        maxZHalf = math.max(maxZHalf, zHalf);
 
+        final mod180 = dims.rotationDeg % 180.0;
+        final alignedGapZ = (mod180 < 15.0) || ((180.0 - mod180) < 15.0);
+        if ((shapeE == SectionShape.doubleAngle || shapeE == SectionShape.doubleChannel) &&
+            dims.gap >= 6.0 &&
+            alignedGapZ) {
+          minCenterGapHalf = math.min(minCenterGapHalf, 0.5 * dims.gap * vs);
+        } else {
+          allTwinWithCenterGap = false;
+        }
+        connectedInfo.add((elem: e, dir2: dir2, perp2: perp2, hw: hw));
+      }
+
+      final useCenterGusset = connectedCount > 0 && allTwinWithCenterGap && minCenterGapHalf >= 4.0;
+      final plateInnerZ = maxZHalf + 2.0;
+      final plateOuterZ = maxZHalf + 16.0;
+      final boltBaseZ = useCenterGusset ? maxZHalf + 1.0 : plateOuterZ;
+      final boltTopZ = boltBaseZ + 16.0;
+      final weldZ = useCenterGusset ? (minCenterGapHalf + 3.0) : (plateOuterZ + 2.0);
+      final pinHalfZ = boltTopZ + 12.0;
+
+      for (final info in connectedInfo) {
+        final dir2 = info.dir2;
+        final perp2 = info.perp2;
+        final hw = info.hw;
         final p2 = Offset(p.x, p.y);
         hullPts.add(p2 + dir2 * reach + perp2 * (hw + 14.0));
         hullPts.add(p2 + dir2 * reach - perp2 * (hw + 14.0));
@@ -1050,22 +1216,21 @@ class _Ansys3DPainter extends CustomPainter {
         // Chi tiết liên kết đầu thanh: Bu-lông lục giác 3D / Đường hàn góc 3D / Chốt Clevis 3D
         if (connectionType == ConnectionDetailType.boltedGusset) {
           for (final dAlong in [reach * 0.44, reach * 0.78]) {
-            for (final off in [-hw * 0.48, hw * 0.48]) {
+            for (final off in [-hw * 0.46, hw * 0.46]) {
               final bx = p.x + dir2.dx * dAlong + perp2.dx * off;
               final by = p.y + dir2.dy * dAlong + perp2.dy * off;
-              // Dựng riêng mũ bu-lông mặt trước (+Z) và đai ốc mặt sau (-Z) nhô nổi trên bề mặt bản mã!
               _addPrismFaces(
                 faces,
-                _Vec3(bx, by, 60.0),
-                _Vec3(bx, by, 78.0),
+                _Vec3(bx, by, boltBaseZ),
+                _Vec3(bx, by, boltTopZ),
                 hexBoltProfile,
                 const Color(0xFFFACC15),
                 alpha: 1.0,
               );
               _addPrismFaces(
                 faces,
-                _Vec3(bx, by, -78.0),
-                _Vec3(bx, by, -60.0),
+                _Vec3(bx, by, -boltTopZ),
+                _Vec3(bx, by, -boltBaseZ),
                 hexBoltProfile,
                 const Color(0xFFEAB308),
                 alpha: 1.0,
@@ -1073,29 +1238,28 @@ class _Ansys3DPainter extends CustomPainter {
             }
           }
         } else if (connectionType == ConnectionDetailType.weldedGusset) {
-          // 2 dải đường hàn góc 3D màu cam sáng nổi trên hai mặt tiếp giáp bản mã
           final weldProfile = [
-            const Offset(-8, -8),
-            const Offset(8, -8),
-            const Offset(8, 8),
-            const Offset(-8, 8),
+            const Offset(-7, -7),
+            const Offset(7, -7),
+            const Offset(7, 7),
+            const Offset(-7, 7),
           ];
           for (final sgn in [-1.0, 1.0]) {
             final wa = _Vec3(
               p.x + dir2.dx * (reach * 0.22) + perp2.dx * (hw * sgn),
               p.y + dir2.dy * (reach * 0.22) + perp2.dy * (hw * sgn),
-              64.0,
+              weldZ,
             );
             final wb = _Vec3(
               p.x + dir2.dx * (reach * 0.94) + perp2.dx * (hw * sgn),
               p.y + dir2.dy * (reach * 0.94) + perp2.dy * (hw * sgn),
-              64.0,
+              weldZ,
             );
             _addPrismFaces(faces, wa, wb, weldProfile, const Color(0xFFF97316));
             _addPrismFaces(
               faces,
-              _Vec3(wa.x, wa.y, -64.0),
-              _Vec3(wb.x, wb.y, -64.0),
+              _Vec3(wa.x, wa.y, -weldZ),
+              _Vec3(wb.x, wb.y, -weldZ),
               weldProfile,
               const Color(0xFFF97316),
             );
@@ -1113,17 +1277,22 @@ class _Ansys3DPainter extends CustomPainter {
         hullPts.add(cExt + Offset(tang3.x * 80.0, tang3.y * 80.0));
       }
 
-      // Đùn 2 tấm bản mã kẹp 3D màu xanh công nghiệp ở mặt trước & mặt sau nút
+      // Bản mã 3D thông minh: bản mã kẹp giữa khe hở s cho thép ghép đôi 2L/2C, hoặc 2 tấm kẹp ngoài không xuyên tiết diện!
       final hull = _convexHullXY(hullPts);
-      _addExtrudedPolyXY(faces, hull, 44.0, 60.0, const Color(0xFF1D4ED8), alpha: 0.90);
-      _addExtrudedPolyXY(faces, hull, -60.0, -44.0, const Color(0xFF1E40AF), alpha: 0.90);
+      if (useCenterGusset) {
+        final gHalf = (minCenterGapHalf - 0.5).clamp(4.0, 12.0);
+        _addExtrudedPolyXY(faces, hull, -gHalf, gHalf, const Color(0xFF1D4ED8), alpha: 0.95);
+      } else {
+        _addExtrudedPolyXY(faces, hull, plateInnerZ, plateOuterZ, const Color(0xFF1D4ED8), alpha: 0.90);
+        _addExtrudedPolyXY(faces, hull, -plateOuterZ, -plateInnerZ, const Color(0xFF1E40AF), alpha: 0.90);
+      }
 
       // Chốt bản lề Clevis 3D Ø60 nếu chọn kiểu Tai chốt
       if (connectionType == ConnectionDetailType.pinnedClevis) {
         _addPrismFaces(
           faces,
-          _Vec3(p.x, p.y, -88.0),
-          _Vec3(p.x, p.y, 88.0),
+          _Vec3(p.x, p.y, -pinHalfZ),
+          _Vec3(p.x, p.y, pinHalfZ),
           clevisPinProfile,
           const Color(0xFFF59E0B),
         );
@@ -1417,19 +1586,21 @@ class _Ansys3DPainter extends CustomPainter {
     );
   }
 
-  void _drawBadge3D(Canvas canvas, Offset center, String text, Color borderColor) {
+  void _drawBadge3D(Canvas canvas, Offset center, String text, Color borderColor, {double fontSize = 9.2}) {
     final tp = TextPainter(
       text: TextSpan(
         text: text,
         style: TextStyle(
           color: darkMode ? Colors.white : const Color(0xFF0F172A),
-          fontSize: 9.2,
+          fontSize: fontSize,
           fontWeight: FontWeight.bold,
         ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
-    final rect = Rect.fromCenter(center: center, width: tp.width + 10, height: tp.height + 5);
+    final padX = fontSize < 8.5 ? 7.0 : 10.0;
+    final padY = fontSize < 8.5 ? 3.5 : 5.0;
+    final rect = Rect.fromCenter(center: center, width: tp.width + padX, height: tp.height + padY);
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(5));
     canvas.drawRRect(rrect, Paint()..color = darkMode ? const Color(0xBF0B1220) : const Color(0xD9FFFFFF));
     canvas.drawRRect(

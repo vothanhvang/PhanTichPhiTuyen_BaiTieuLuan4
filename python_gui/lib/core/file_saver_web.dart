@@ -1,6 +1,5 @@
-// Lưu tệp báo cáo Word (.docx) & PDF (.pdf) trên trình duyệt Web:
-// Ưu tiên mở hộp thoại "Save As" chọn thư mục bằng File System Access API
-// (Chrome / Edge Desktop), tự động fallback sang tải xuống trình duyệt nếu không hỗ trợ.
+// Lưu & mở tệp đa định dạng (.docx, .pdf, .png, .csv, .json) trên trình duyệt Web
+import 'dart:async';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
@@ -10,12 +9,18 @@ import 'package:web/web.dart' as web;
 external JSPromise<JSObject> _showSaveFilePicker(JSObject options);
 
 Future<String?> saveBinaryFile(String fileName, Uint8List bytes, String mimeType) async {
-  // 1. Thử mở hộp thoại chọn nơi lưu chuẩn OS trên Chrome / Edge
   if (web.window.hasProperty('showSaveFilePicker'.toJS).toDart) {
     try {
       final dotIdx = fileName.lastIndexOf('.');
       final ext = (dotIdx >= 0) ? fileName.substring(dotIdx).toLowerCase() : '.pdf';
-      final desc = ext == '.docx' ? 'Microsoft Word Document' : 'PDF Document';
+      final desc = switch (ext) {
+        '.docx' => 'Microsoft Word Document',
+        '.pdf' => 'PDF Document',
+        '.png' => 'PNG Image',
+        '.csv' => 'CSV Table',
+        '.json' => 'CALFEM Project File',
+        _ => 'File',
+      };
 
       final acceptMap = JSObject();
       acceptMap.setProperty(mimeType.toJS, <JSString>[ext.toJS].toJS);
@@ -40,13 +45,11 @@ Future<String?> saveBinaryFile(String fileName, Uint8List bytes, String mimeType
     } catch (e) {
       final msg = e.toString();
       if (msg.contains('AbortError') || msg.contains('aborted')) {
-        return null; // Người dùng bấm Cancel
+        return null;
       }
-      // Fallback xuống tải xuống trình duyệt bên dưới nếu API bị chặn bởi iframe/chính sách
     }
   }
 
-  // 2. Fallback chuẩn mọi trình duyệt (Firefox, Safari, trình duyệt di động)
   final blobParts = <web.BlobPart>[bytes.toJS].toJS;
   final blob = web.Blob(blobParts, web.BlobPropertyBag(type: mimeType));
   final url = web.URL.createObjectURL(blob);
@@ -59,4 +62,44 @@ Future<String?> saveBinaryFile(String fileName, Uint8List bytes, String mimeType
   anchor.remove();
   web.URL.revokeObjectURL(url);
   return 'Đã tải xuống trình duyệt: $fileName';
+}
+
+Future<String?> openTextFile({String ext = 'json'}) async {
+  final completer = Completer<String?>();
+  final input = web.document.createElement('input') as web.HTMLInputElement;
+  input.type = 'file';
+  input.accept = '.$ext,application/json,text/plain';
+  input.style.display = 'none';
+  web.document.body?.appendChild(input);
+
+  void finish(String? val) {
+    if (!completer.isCompleted) {
+      completer.complete(val);
+    }
+    input.remove();
+  }
+
+  input.onchange = ((web.Event _) {
+    final files = input.files;
+    if (files == null || files.length == 0) {
+      finish(null);
+      return;
+    }
+    final file = files.item(0);
+    if (file == null) {
+      finish(null);
+      return;
+    }
+    final reader = web.FileReader();
+    reader.onload = ((web.Event _) {
+      final res = reader.result;
+      finish((res as JSString?)?.toDart);
+    }).toJS;
+    reader.onerror = ((web.Event _) => finish(null)).toJS;
+    reader.readAsText(file);
+  }).toJS;
+
+  input.oncancel = ((web.Event _) => finish(null)).toJS;
+  input.click();
+  return completer.future;
 }

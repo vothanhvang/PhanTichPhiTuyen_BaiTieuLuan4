@@ -44,3 +44,14 @@ Future<String?> saveBinaryFile(String fileName, Uint8List bytes, String mimeType
   await file.writeAsBytes(bytes, flush: true);
   return file.path;
 }
+
+Future<String?> openTextFile({String ext = 'json'}) async {
+  if (Platform.isWindows || Platform.isAndroid) {
+    try {
+      return await _fileDialogChannel.invokeMethod<String>('openTextFile', {'ext': ext});
+    } on MissingPluginException {
+      return null;
+    }
+  }
+  return null;
+}

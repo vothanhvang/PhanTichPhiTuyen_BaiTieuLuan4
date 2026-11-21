@@ -10,6 +10,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val channelName = "calfem.native/file_dialog"
     private val reqCreateDoc = 42091
+    private val reqOpenDoc = 42092
     private var pendingResult: MethodChannel.Result? = null
     private var pendingBytes: ByteArray? = null
 
@@ -17,6 +18,21 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
+                if (call.method == "openTextFile") {
+                    if (pendingResult != null) {
+                        result.error("BUSY", "Đang mở hộp thoại tệp.", null)
+                        return@setMethodCallHandler
+                    }
+                    pendingResult = result
+                    pendingBytes = null
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "*/*"
+                    }
+                    @Suppress("DEPRECATION")
+                    startActivityForResult(intent, reqOpenDoc)
+                    return@setMethodCallHandler
+                }
                 if (call.method != "saveFile") {
                     result.notImplemented()
                     return@setMethodCallHandler
@@ -25,7 +41,7 @@ class MainActivity : FlutterActivity() {
                 val mimeType = call.argument<String>("mimeType") ?: "application/octet-stream"
                 val bytes = call.argument<ByteArray>("bytes")
                 if (bytes == null) {
-                    result.error("BAD_ARGS", "Thiếu dữ liệu tệp báo cáo.", null)
+                    result.error("BAD_ARGS", "Thiếu dữ liệu tệp.", null)
                     return@setMethodCallHandler
                 }
                 if (pendingResult != null) {
@@ -49,6 +65,23 @@ class MainActivity : FlutterActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == reqOpenDoc) {
+            val res = pendingResult
+            pendingResult = null
+            pendingBytes = null
+            if (res == null) return
+            if (resultCode != Activity.RESULT_OK || data?.data == null) {
+                res.success(null)
+                return
+            }
+            try {
+                val txt = contentResolver.openInputStream(data.data!!)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                res.success(txt)
+            } catch (e: Exception) {
+                res.error("IO_ERROR", e.message ?: "Lỗi đọc tệp trên Android", null)
+            }
+            return
+        }
         if (requestCode != reqCreateDoc) return
 
         val res = pendingResult

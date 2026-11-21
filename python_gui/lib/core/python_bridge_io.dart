@@ -71,6 +71,8 @@ class PythonBridge {
     int nSteps,
   ) async {
     if (!_connected) return null;
+    // Khi bật phi tuyến vật liệu đàn-dẻo GMNIA, dùng lõi song song có luật tái bền song tuyến tính
+    if (model.materialNonlinear) return null;
     try {
       final presetCode = model.name.contains('Dahlblom')
           ? 'dahlblom_ex9_1'
@@ -84,6 +86,8 @@ class PythonBridge {
         'A_mm2': model.baseA,
         'areas_mm2': model.areas,
         'coords_mm': model.coords,
+        'conn': model.conn,
+        'f_ref_n': model.fRef,
         'P_kN': model.basePKn,
         'nu': model.nu,
         'section_shape': model.sectionShape.code,

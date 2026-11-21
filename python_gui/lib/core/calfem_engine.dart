@@ -52,12 +52,16 @@ enum SolverMethod {
   const SolverMethod(this.label, this.code);
 }
 
-/// Bài toán mẫu có sẵn (Đề bài chính + Các bài toán kiểm chứng sách gốc)
+/// Bài toán mẫu có sẵn (Đề bài chính + Kiểm chứng sách gốc + 4 Dàn công nghiệp mẫu)
 enum TrussPreset {
   assignment5Bar('Đề bài chính: Dàn 4 nút – 5 thanh (1.jpg)', 'assignment_5bar'),
   dahlblomEx91('Benchmark: Dahlblom Example 9.1 (bar2g)', 'dahlblom_ex9_1'),
   calfemExs3('Benchmark: CALFEM 3.4 exs3.m', 'calfem_exs3'),
-  vonMisesArch('Minh họa bật nhảy: Vòm 2 thanh Von Mises', 'von_mises');
+  vonMisesArch('Minh họa bật nhảy: Vòm 2 thanh Von Mises', 'von_mises'),
+  prattTruss('Dàn cầu Pratt công nghiệp (8 nút – 13 thanh)', 'pratt_truss'),
+  warrenTruss('Dàn thép Warren tam giác (7 nút – 11 thanh)', 'warren_truss'),
+  roofFinkTruss('Dàn mái dốc tam giác Fink (6 nút – 9 thanh)', 'roof_fink'),
+  cantileverTruss('Dàn công-xôn vươn (6 nút – 8 thanh)', 'cantilever_truss');
 
   final String label;
   final String code;
@@ -124,13 +128,14 @@ enum ConnectionDetailType {
   const ConnectionDetailType(this.label, this.shortLabel, this.code);
 }
 
-/// Trường kết quả hiển thị bản đồ màu kiểu ANSYS
+/// Trường kết quả hiển thị bản đồ màu kỹ thuật
 enum ContourField {
   axialStress('Ứng suất pháp σ (MPa)', 'MPa', 'σ'),
   axialStrain('Biến dạng dọc ε (με)', 'με', 'ε'),
   axialForce('Lực dọc trục N (kN)', 'kN', 'N'),
   displacement('Chuyển vị tổng ||u|| (mm)', 'mm', '||u||'),
-  strainEnergyDensity('Mật độ năng lượng u₀ (kJ/m³)', 'kJ/m³', 'u₀');
+  strainEnergyDensity('Mật độ năng lượng u₀ (kJ/m³)', 'kJ/m³', 'u₀'),
+  utilizationRatio('Tỷ số làm việc U (%) — Kiểm tra bền/oằn', '%', 'U');
 
   final String label;
   final String unit;
@@ -149,6 +154,8 @@ enum ContourField {
         return '${v.toStringAsFixed(4)} $unit';
       case ContourField.strainEnergyDensity:
         return '${v.toStringAsFixed(3)} $unit';
+      case ContourField.utilizationRatio:
+        return '${v.toStringAsFixed(1)} $unit';
     }
   }
 }
@@ -165,9 +172,10 @@ class _InertiaResult {
   final double area;
   final double ix;
   final double iy;
+  final double ixy;
   final double iMajor;
   final double iMinor;
-  const _InertiaResult(this.area, this.ix, this.iy, this.iMajor, this.iMinor);
+  const _InertiaResult(this.area, this.ix, this.iy, this.ixy, this.iMajor, this.iMinor);
 
   static _InertiaResult fromRects(List<_RectPart> rects) {
     double sumA = 0.0, sumAx = 0.0, sumAy = 0.0;
@@ -180,7 +188,7 @@ class _InertiaResult {
       sumAy += a * 0.5 * (r.y0 + r.y1);
     }
     if (sumA <= 1e-9) {
-      return const _InertiaResult(1.0, 1.0, 1.0, 1.0, 1.0);
+      return const _InertiaResult(1.0, 1.0, 1.0, 0.0, 1.0, 1.0);
     }
     final xc = sumAx / sumA;
     final yc = sumAy / sumA;
@@ -199,7 +207,7 @@ class _InertiaResult {
     final rad = math.sqrt(math.pow(0.5 * (ix - iy), 2) + ixy * ixy);
     final i1 = math.max(1e-6, avg + rad);
     final i2 = math.max(1e-6, avg - rad);
-    return _InertiaResult(sumA, math.max(1e-6, ix), math.max(1e-6, iy), i1, i2);
+    return _InertiaResult(sumA, math.max(1e-6, ix), math.max(1e-6, iy), ixy, i1, i2);
   }
 }
 
@@ -259,11 +267,12 @@ class CustomSectionGeometry {
     );
   }
 
-  /// Tính đầy đủ đặc trưng hình học mặt cắt (A, Ix, Iy, I1, I2) từ kích thước vừa nhập
-  SectionDimensions toDimensions(SectionShape shape, {double scale = 1.0}) {
+  /// Tính đầy đủ đặc trưng hình học mặt cắt (A, Ix, Iy, Ixy, I1, I2) từ kích thước vừa nhập
+  SectionDimensions toDimensions(SectionShape shape, {double scale = 1.0, double rotationDeg = 0.0}) {
     final s = scale.clamp(0.1, 10.0);
     final h = (heightMm * s).clamp(8.0, 3000.0);
     final b = (widthMm * s).clamp(8.0, 3000.0);
+    final rot = ((rotationDeg % 360.0) + 360.0) % 360.0;
     switch (shape) {
       case SectionShape.solidRod:
         final r = 0.5 * h;
@@ -278,6 +287,8 @@ class CustomSectionGeometry {
           areaMm2: area,
           ix: inertia,
           iy: inertia,
+          ixy: 0.0,
+          rotationDeg: rot,
           iMajor: inertia,
           iMinor: inertia,
         );
@@ -298,6 +309,8 @@ class CustomSectionGeometry {
           areaMm2: area,
           ix: inertia,
           iy: inertia,
+          ixy: 0.0,
+          rotationDeg: rot,
           iMajor: inertia,
           iMinor: inertia,
         );
@@ -312,6 +325,8 @@ class CustomSectionGeometry {
           areaMm2: area,
           ix: ix,
           iy: iy,
+          ixy: 0.0,
+          rotationDeg: rot,
           iMajor: math.max(ix, iy),
           iMinor: math.min(ix, iy),
         );
@@ -329,6 +344,8 @@ class CustomSectionGeometry {
           areaMm2: props.area,
           ix: props.ix,
           iy: props.iy,
+          ixy: props.ixy,
+          rotationDeg: rot,
           iMajor: props.iMajor,
           iMinor: props.iMinor,
         );
@@ -347,6 +364,8 @@ class CustomSectionGeometry {
           areaMm2: props.area,
           ix: props.ix,
           iy: props.iy,
+          ixy: props.ixy,
+          rotationDeg: rot,
           iMajor: props.iMajor,
           iMinor: props.iMinor,
         );
@@ -365,6 +384,8 @@ class CustomSectionGeometry {
           areaMm2: props.area,
           ix: props.ix,
           iy: props.iy,
+          ixy: props.ixy,
+          rotationDeg: rot,
           iMajor: props.iMajor,
           iMinor: props.iMinor,
         );
@@ -382,6 +403,8 @@ class CustomSectionGeometry {
           areaMm2: props.area,
           ix: props.ix,
           iy: props.iy,
+          ixy: props.ixy,
+          rotationDeg: rot,
           iMajor: props.iMajor,
           iMinor: props.iMinor,
         );
@@ -402,6 +425,8 @@ class CustomSectionGeometry {
           areaMm2: props.area,
           ix: props.ix,
           iy: props.iy,
+          ixy: props.ixy,
+          rotationDeg: rot,
           iMajor: props.iMajor,
           iMinor: props.iMinor,
         );
@@ -423,6 +448,8 @@ class CustomSectionGeometry {
           areaMm2: props.area,
           ix: props.ix,
           iy: props.iy,
+          ixy: props.ixy,
+          rotationDeg: rot,
           iMajor: props.iMajor,
           iMinor: props.iMinor,
         );
@@ -441,6 +468,8 @@ class CustomSectionGeometry {
           areaMm2: props.area,
           ix: props.ix,
           iy: props.iy,
+          ixy: props.ixy,
+          rotationDeg: rot,
           iMajor: props.iMajor,
           iMinor: props.iMinor,
         );
@@ -459,6 +488,8 @@ class CustomSectionGeometry {
           areaMm2: props.area,
           ix: props.ix,
           iy: props.iy,
+          ixy: props.ixy,
+          rotationDeg: rot,
           iMajor: props.iMajor,
           iMinor: props.iMinor,
         );
@@ -477,6 +508,8 @@ class CustomSectionGeometry {
           areaMm2: props.area,
           ix: props.ix,
           iy: props.iy,
+          ixy: props.ixy,
+          rotationDeg: rot,
           iMajor: props.iMajor,
           iMinor: props.iMinor,
         );
@@ -579,19 +612,21 @@ class CustomSectionGeometry {
 
 /// Kích thước hình học mặt cắt ngang 3D quy đổi từ diện tích A (mm²) hoặc nhập trực tiếp
 class SectionDimensions {
-  final double height;    // Chiều cao phủ bì H (mm)
-  final double width;     // Bề rộng phủ bì W_tot (mm)
-  final double legWidth;  // Bề rộng 1 cánh B (dùng cho 2L, 2C, Z; bằng width với tiết diện đơn)
-  final double tf;        // Chiều dày cánh / thành (mm)
-  final double tw;        // Chiều dày bụng (mm)
-  final double gap;       // Khe hở bản mã s cho tiết diện ghép đôi 2L, 2C (mm)
+  final double height;      // Chiều cao phủ bì H (mm)
+  final double width;       // Bề rộng phủ bì W_tot (mm)
+  final double legWidth;    // Bề rộng 1 cánh B (dùng cho 2L, 2C, Z; bằng width với tiết diện đơn)
+  final double tf;          // Chiều dày cánh / thành (mm)
+  final double tw;          // Chiều dày bụng (mm)
+  final double gap;         // Khe hở bản mã s cho tiết diện ghép đôi 2L, 2C (mm)
   final double radiusOut;
   final double radiusIn;
   final double areaMm2;
-  final double ix;        // Mô-men quán tính trục ngang x-x (mm⁴)
-  final double iy;        // Mô-men quán tính trục đứng y-y (mm⁴)
-  final double iMajor;    // Mô-men quán tính chính cực đại I_1 (mm⁴)
-  final double iMinor;    // Mô-men quán tính chính cực tiểu I_2 (mm⁴)
+  final double ix;          // Mô-men quán tính trục ngang gốc x-x (mm⁴)
+  final double iy;          // Mô-men quán tính trục đứng gốc y-y (mm⁴)
+  final double ixy;         // Mô-men quán tính ly tâm I_xy (mm⁴)
+  final double rotationDeg; // Góc xoay mặt cắt quanh trục dọc thanh β (độ, 0..360°)
+  final double iMajor;      // Mô-men quán tính chính cực đại I_1 (mm⁴)
+  final double iMinor;      // Mô-men quán tính chính cực tiểu I_2 (mm⁴)
 
   const SectionDimensions({
     required this.height,
@@ -605,11 +640,48 @@ class SectionDimensions {
     this.areaMm2 = 0,
     double? ix,
     double? iy,
+    this.ixy = 0,
+    this.rotationDeg = 0,
     required this.iMajor,
     required this.iMinor,
   })  : legWidth = legWidth ?? width,
         ix = ix ?? iMajor,
         iy = iy ?? iMinor;
+
+  SectionDimensions withRotation(double deg) {
+    final norm = ((deg % 360.0) + 360.0) % 360.0;
+    return SectionDimensions(
+      height: height,
+      width: width,
+      legWidth: legWidth,
+      tf: tf,
+      tw: tw,
+      gap: gap,
+      radiusOut: radiusOut,
+      radiusIn: radiusIn,
+      areaMm2: areaMm2,
+      ix: ix,
+      iy: iy,
+      ixy: ixy,
+      rotationDeg: norm,
+      iMajor: iMajor,
+      iMinor: iMinor,
+    );
+  }
+
+  /// Mô-men quán tính trục ngang sau khi xoay mặt cắt góc β quanh trục dọc thanh (vòng tròn Mohr)
+  double get ixRotated {
+    if (rotationDeg.abs() < 1e-6) return ix;
+    final b2 = 2.0 * rotationDeg * math.pi / 180.0;
+    return math.max(1e-6, 0.5 * (ix + iy) + 0.5 * (ix - iy) * math.cos(b2) - ixy * math.sin(b2));
+  }
+
+  /// Mô-men quán tính trục đứng sau khi xoay mặt cắt góc β quanh trục dọc thanh
+  double get iyRotated {
+    if (rotationDeg.abs() < 1e-6) return iy;
+    final b2 = 2.0 * rotationDeg * math.pi / 180.0;
+    return math.max(1e-6, 0.5 * (ix + iy) - 0.5 * (ix - iy) * math.cos(b2) + ixy * math.sin(b2));
+  }
 
   double get rGyrationMin => areaMm2 > 1e-6 ? math.sqrt(iMinor / areaMm2) : 0.0;
 
@@ -620,31 +692,32 @@ class SectionDimensions {
     final tfS = tf.toStringAsFixed(1);
     final twS = tw.toStringAsFixed(1);
     final gS = gap.toStringAsFixed(1);
+    final rotSuffix = rotationDeg.abs() > 0.05 ? ' ↻${rotationDeg.toStringAsFixed(0)}°' : '';
     switch (shape) {
       case SectionShape.iSection:
-        return 'I $hS×$wS×tf=$tfS×tw=$twS mm';
+        return 'I $hS×$wS×tf=$tfS×tw=$twS mm$rotSuffix';
       case SectionShape.boxSection:
-        return 'Hộp $hS×$wS×t=$tfS mm';
+        return 'Hộp $hS×$wS×t=$tfS mm$rotSuffix';
       case SectionShape.circTube:
-        return 'Ống Ø$hS×t=$tfS mm';
+        return 'Ống Ø$hS×t=$tfS mm$rotSuffix';
       case SectionShape.solidRect:
-        return 'Chữ nhật $wS×$hS mm';
+        return 'Chữ nhật $wS×$hS mm$rotSuffix';
       case SectionShape.solidRod:
-        return 'Tròn đặc Ø$hS mm';
+        return 'Tròn đặc Ø$hS mm$rotSuffix';
       case SectionShape.channelC:
-        return 'C $hS×$wS×tf=$tfS×tw=$twS mm';
+        return 'C $hS×$wS×tf=$tfS×tw=$twS mm$rotSuffix';
       case SectionShape.angleL:
-        return 'L $hS×$wS×t=$tfS mm';
+        return 'L $hS×$wS×t=$tfS mm$rotSuffix';
       case SectionShape.doubleAngle:
-        return '2L $hS×$bS×t=$tfS (s=$gS) mm';
+        return '2L $hS×$bS×t=$tfS (s=$gS) mm$rotSuffix';
       case SectionShape.doubleChannel:
-        return '2C $hS×$bS×tf=$tfS×tw=$twS (s=$gS) mm';
+        return '2C $hS×$bS×tf=$tfS×tw=$twS (s=$gS) mm$rotSuffix';
       case SectionShape.teeSection:
-        return 'T $hS×$wS×tf=$tfS×tw=$twS mm';
+        return 'T $hS×$wS×tf=$tfS×tw=$twS mm$rotSuffix';
       case SectionShape.zeeSection:
-        return 'Z $hS×$bS×t=$tfS mm';
+        return 'Z $hS×$bS×t=$tfS mm$rotSuffix';
       case SectionShape.cruciform:
-        return '+ $hS×$wS×tf=$tfS×tw=$twS mm';
+        return '+ $hS×$wS×tf=$tfS×tw=$twS mm$rotSuffix';
     }
   }
 
@@ -727,7 +800,7 @@ class SectionDimensions {
     }
   }
 
-  /// Kiểm tra điểm vật liệu (xMm, yMm) trong mặt cắt ngang (dùng chung cho Phẫu thuật 2D)
+  /// Kiểm tra điểm vật liệu (xMm, yMm) trong mặt cắt ngang (tọa độ gốc chưa xoay)
   bool containsLocalPoint(SectionShape shape, double xMm, double yMm) {
     if (shape == SectionShape.solidRod) {
       final r = radiusOut > 0 ? radiusOut : 0.5 * height;
@@ -743,6 +816,52 @@ class SectionDimensions {
       if (p.contains(xMm, yMm)) return true;
     }
     return false;
+  }
+
+  /// Kiểm tra điểm vật liệu (xRotMm, yRotMm) sau khi xoay mặt cắt góc β quanh trục dọc thanh
+  bool containsRotatedPoint(SectionShape shape, double xRotMm, double yRotMm) {
+    if (rotationDeg.abs() < 1e-6) return containsLocalPoint(shape, xRotMm, yRotMm);
+    final rad = rotationDeg * math.pi / 180.0;
+    final c = math.cos(rad), s = math.sin(rad);
+    // Xoay ngược (-β) về hệ trục cục bộ của mặt cắt
+    final xLoc = xRotMm * c + yRotMm * s;
+    final yLoc = -xRotMm * s + yRotMm * c;
+    return containsLocalPoint(shape, xLoc, yLoc);
+  }
+
+  /// Trả về các đa giác viền mặt cắt đã xoay góc β quanh trục dọc thanh (đơn vị mm)
+  List<List<List<double>>> rotatedOutlinePolygonsMm(SectionShape shape, {bool includeInnerHole = false}) {
+    final base = outlinePolygonsMm(shape, includeInnerHole: includeInnerHole);
+    if (rotationDeg.abs() < 1e-6) return base;
+    final rad = rotationDeg * math.pi / 180.0;
+    final c = math.cos(rad), s = math.sin(rad);
+    return [
+      for (final poly in base)
+        [
+          for (final pt in poly)
+            [pt[0] * c - pt[1] * s, pt[0] * s + pt[1] * c],
+        ],
+    ];
+  }
+
+  /// Khung bao phủ bì (width, height) sau khi xoay mặt cắt góc β quanh trục dọc thanh (mm)
+  ({double width, double height}) rotatedBounds(SectionShape shape) {
+    if (shape == SectionShape.solidRod || shape == SectionShape.circTube) {
+      return (width: height, height: height);
+    }
+    if (rotationDeg.abs() < 1e-6) return (width: width, height: height);
+    final polys = rotatedOutlinePolygonsMm(shape, includeInnerHole: false);
+    double maxAbsX = 0.0, maxAbsY = 0.0;
+    for (final poly in polys) {
+      for (final pt in poly) {
+        maxAbsX = math.max(maxAbsX, pt[0].abs());
+        maxAbsY = math.max(maxAbsY, pt[1].abs());
+      }
+    }
+    return (
+      width: math.max(1.0, 2.0 * maxAbsX),
+      height: math.max(1.0, 2.0 * maxAbsY),
+    );
   }
 
   /// Danh sách đa giác viền đóng [[xMm, yMm], ...] dùng cho dựng khối 3D & đường biên 2D
@@ -1001,26 +1120,32 @@ class SectionDimensions {
   }
 }
 
-/// Cấu hình tiết diện riêng cho từng phần tử thanh trong dàn / khung
+/// Cấu hình tiết diện riêng cho từng phần tử thanh trong dàn / khung (kèm góc xoay quanh trục thanh!)
 class ElementSectionConfig {
   final SectionShape shape;
   final CustomSectionGeometry? customGeometry; // null = quy đổi theo diện tích mặc định A_e của bài toán
+  final double rotationDeg;                    // Góc xoay mặt cắt quanh trục dọc thanh β (0..360°)
 
   const ElementSectionConfig({
     this.shape = SectionShape.iSection,
     this.customGeometry,
+    this.rotationDeg = 0.0,
   });
 
   bool get isManualMm => customGeometry != null;
+  bool get isRotated => (rotationDeg % 360.0).abs() > 0.05;
 
   ElementSectionConfig copyWith({
     SectionShape? shape,
     CustomSectionGeometry? customGeometry,
+    double? rotationDeg,
     bool clearCustom = false,
   }) {
+    final nextRot = rotationDeg != null ? ((rotationDeg % 360.0) + 360.0) % 360.0 : this.rotationDeg;
     return ElementSectionConfig(
       shape: shape ?? this.shape,
       customGeometry: clearCustom ? null : (customGeometry ?? this.customGeometry),
+      rotationDeg: nextRot,
     );
   }
 }
@@ -1034,7 +1159,9 @@ class TrussModelData {
   final List<double> areas;        // mm²
   final double E;                  // MPa
   final double nu;                 // Hệ số Poisson
-  final double fyRef;              // MPa (tham khảo)
+  final double fyRef;              // Giới hạn chảy f_y (MPa)
+  final bool materialNonlinear;    // Bật/tắt phi tuyến vật liệu đàn-dẻo song tuyến tính (GMNIA)
+  final double hardeningRatio;     // Tỷ số tái bền E_t / E khi vượt f_y (mặc định 0.02)
   final List<int> fixedDofs0;      // Chỉ số DOF bị khóa cứng (0-based)
   final List<NodeSupportType> nodeSupports; // Loại liên kết tại từng nút
   final List<SupportDirection> supportDirections; // Hướng gối tựa tại từng nút
@@ -1044,7 +1171,7 @@ class TrussModelData {
   final List<String> nodeLabels;
   final SectionShape sectionShape;
   final CustomSectionGeometry? customSection; // Giữ tương thích ngược toàn hệ khi không dùng elementSections
-  final List<ElementSectionConfig> elementSections; // Thiết lập tiết diện độc lập cho từng thanh
+  final List<ElementSectionConfig> elementSections; // Thiết lập tiết diện & góc xoay độc lập cho từng thanh
   final double baseL;
   final double baseA;
   final double basePKn;
@@ -1058,6 +1185,8 @@ class TrussModelData {
     required this.E,
     required this.nu,
     required this.fyRef,
+    this.materialNonlinear = false,
+    this.hardeningRatio = 0.02,
     required this.fixedDofs0,
     required this.nodeSupports,
     this.supportDirections = const [],
@@ -1073,7 +1202,7 @@ class TrussModelData {
     required this.basePKn,
   });
 
-  /// Trả về cấu hình tiết diện (hình dạng + kích thước tùy chỉnh nếu có) riêng của thanh `e`
+  /// Trả về cấu hình tiết diện (hình dạng + kích thước + góc xoay) riêng của thanh `e`
   ElementSectionConfig sectionConfigForElem(int e) {
     final idx = e.clamp(0, nElems - 1);
     if (idx < elementSections.length) return elementSections[idx];
@@ -1083,13 +1212,14 @@ class TrussModelData {
   /// Trả về dạng mặt cắt riêng của thanh `e`
   SectionShape sectionShapeForElem(int e) => sectionConfigForElem(e).shape;
 
-  /// Kiểm tra xem các thanh trong dàn có đang dùng tiết diện khác nhau hay không
+  /// Kiểm tra xem các thanh trong dàn có đang dùng tiết diện hoặc góc xoay khác nhau hay không
   bool get hasMixedSections {
     if (elementSections.length <= 1) return false;
     final first = elementSections.first;
     for (int i = 1; i < elementSections.length; i++) {
       final cur = elementSections[i];
       if (cur.shape != first.shape) return true;
+      if ((cur.rotationDeg - first.rotationDeg).abs() > 0.05) return true;
       if ((cur.customGeometry == null) != (first.customGeometry == null)) return true;
       if (cur.customGeometry != null && first.customGeometry != null) {
         final a = cur.customGeometry!;
@@ -1106,16 +1236,16 @@ class TrussModelData {
     return false;
   }
 
-  /// Trả về kích thước mặt cắt thực tế của thanh `e` (ưu tiên cấu hình riêng từng thanh!)
+  /// Trả về kích thước mặt cắt thực tế của thanh `e` (kèm góc xoay quanh trục thanh!)
   SectionDimensions sectionDimsForElem(int e) {
     final idx = e.clamp(0, nElems - 1);
     final aElem = areas[idx];
     if (idx < elementSections.length) {
       final cfg = elementSections[idx];
       if (cfg.customGeometry != null) {
-        return cfg.customGeometry!.toDimensions(cfg.shape);
+        return cfg.customGeometry!.toDimensions(cfg.shape, rotationDeg: cfg.rotationDeg);
       }
-      return SectionDimensions.fromArea(cfg.shape, aElem);
+      return SectionDimensions.fromArea(cfg.shape, aElem).withRotation(cfg.rotationDeg);
     }
     if (customSection != null) {
       final aBase = math.max(1.0, customSection!.computedAreaMm2(sectionShape));
@@ -1199,6 +1329,169 @@ class TrussModelData {
           NodeSupportType.free,
           NodeSupportType.rollerX,
         ];
+      case TrussPreset.prattTruss:
+        return const [
+          NodeSupportType.pin,
+          NodeSupportType.free,
+          NodeSupportType.free,
+          NodeSupportType.rollerX,
+          NodeSupportType.free,
+          NodeSupportType.free,
+          NodeSupportType.free,
+          NodeSupportType.free,
+        ];
+      case TrussPreset.warrenTruss:
+        return const [
+          NodeSupportType.pin,
+          NodeSupportType.free,
+          NodeSupportType.free,
+          NodeSupportType.rollerX,
+          NodeSupportType.free,
+          NodeSupportType.free,
+          NodeSupportType.free,
+        ];
+      case TrussPreset.roofFinkTruss:
+        return const [
+          NodeSupportType.pin,
+          NodeSupportType.free,
+          NodeSupportType.rollerX,
+          NodeSupportType.free,
+          NodeSupportType.free,
+          NodeSupportType.free,
+        ];
+      case TrussPreset.cantileverTruss:
+        return const [
+          NodeSupportType.pin,
+          NodeSupportType.pin,
+          NodeSupportType.free,
+          NodeSupportType.free,
+          NodeSupportType.free,
+          NodeSupportType.free,
+        ];
+    }
+  }
+
+  /// Hướng liên kết mặc định cho từng bài toán mẫu
+  static List<SupportDirection> defaultDirectionsFor(TrussPreset preset) {
+    final n = defaultSupportsFor(preset).length;
+    if (preset == TrussPreset.cantileverTruss) {
+      return [
+        SupportDirection.left,
+        SupportDirection.left,
+        for (int i = 2; i < n; i++) SupportDirection.auto,
+      ];
+    }
+    return List<SupportDirection>.filled(n, SupportDirection.auto);
+  }
+
+  /// Bảng liên kết phần tử (1-based) mặc định cho từng bài toán mẫu
+  static List<List<int>> defaultConnFor(TrussPreset preset) {
+    switch (preset) {
+      case TrussPreset.dahlblomEx91:
+        return const [[1, 3], [2, 3]];
+      case TrussPreset.calfemExs3:
+        return const [[1, 3], [3, 4], [2, 3]];
+      case TrussPreset.vonMisesArch:
+        return const [[1, 2], [2, 3]];
+      case TrussPreset.assignment5Bar:
+        return const [[1, 2], [1, 3], [3, 4], [3, 2], [2, 4]];
+      case TrussPreset.prattTruss:
+        return const [
+          [1, 2], [2, 3], [3, 4],
+          [5, 6], [6, 7], [7, 8],
+          [1, 5], [2, 6], [3, 7], [4, 8],
+          [5, 2], [6, 3], [3, 8],
+        ];
+      case TrussPreset.warrenTruss:
+        return const [
+          [1, 2], [2, 3], [3, 4],
+          [5, 6], [6, 7],
+          [1, 5], [5, 2], [2, 6], [6, 3], [3, 7], [7, 4],
+        ];
+      case TrussPreset.roofFinkTruss:
+        return const [
+          [1, 2], [2, 3],
+          [1, 4], [4, 5], [5, 6], [6, 3],
+          [4, 2], [5, 2], [6, 2],
+        ];
+      case TrussPreset.cantileverTruss:
+        return const [
+          [1, 3], [3, 5],
+          [2, 4], [4, 6],
+          [3, 4], [5, 6],
+          [1, 4], [3, 6],
+        ];
+    }
+  }
+
+  /// Tải trọng tập trung mặc định tại từng nút [[Fx_kN, Fy_kN], ...]
+  static List<List<double>> defaultNodalLoadsKnFor(TrussPreset preset, double pKn) {
+    switch (preset) {
+      case TrussPreset.dahlblomEx91:
+        return [
+          [0.0, 0.0],
+          [0.0, 0.0],
+          [-10000.0, -200.0],
+        ];
+      case TrussPreset.calfemExs3:
+        return [
+          [0.0, 0.0],
+          [0.0, 0.0],
+          [0.0, -80.0],
+          [0.0, 0.0],
+        ];
+      case TrussPreset.vonMisesArch:
+        return [
+          [0.0, 0.0],
+          [0.0, -pKn],
+          [0.0, 0.0],
+        ];
+      case TrussPreset.assignment5Bar:
+        return [
+          [0.0, 0.0],
+          [0.0, pKn],
+          [0.0, 0.0],
+          [0.0, 0.0],
+        ];
+      case TrussPreset.prattTruss:
+        return [
+          [0.0, 0.0],
+          [0.0, 0.0],
+          [0.0, 0.0],
+          [0.0, 0.0],
+          [0.0, 0.0],
+          [0.0, -0.5 * pKn],
+          [0.0, -0.5 * pKn],
+          [0.0, 0.0],
+        ];
+      case TrussPreset.warrenTruss:
+        return [
+          [0.0, 0.0],
+          [0.0, 0.0],
+          [0.0, 0.0],
+          [0.0, 0.0],
+          [0.0, -0.5 * pKn],
+          [0.0, -pKn],
+          [0.0, -0.5 * pKn],
+        ];
+      case TrussPreset.roofFinkTruss:
+        return [
+          [0.0, 0.0],
+          [0.0, 0.0],
+          [0.0, 0.0],
+          [0.0, -0.5 * pKn],
+          [0.0, -pKn],
+          [0.0, -0.5 * pKn],
+        ];
+      case TrussPreset.cantileverTruss:
+        return [
+          [0.0, 0.0],
+          [0.0, 0.0],
+          [0.0, 0.0],
+          [0.0, 0.0],
+          [0.0, 0.0],
+          [0.0, -pKn],
+        ];
     }
   }
 
@@ -1233,18 +1526,7 @@ class TrussModelData {
   }
 
   /// Số lượng thanh mặc định của từng bài toán mẫu
-  static int defaultElemCountFor(TrussPreset preset) {
-    switch (preset) {
-      case TrussPreset.dahlblomEx91:
-        return 2;
-      case TrussPreset.calfemExs3:
-        return 3;
-      case TrussPreset.vonMisesArch:
-        return 2;
-      case TrussPreset.assignment5Bar:
-        return 5;
-    }
-  }
+  static int defaultElemCountFor(TrussPreset preset) => defaultConnFor(preset).length;
 
   /// Tọa độ nút mặc định (mm) của từng bài toán mẫu theo chiều dài cơ sở L
   static List<List<double>> defaultCoordsFor(TrussPreset preset, double lMm) {
@@ -1275,34 +1557,47 @@ class TrussModelData {
           [0.0, lMm],
           [2.0 * lMm, lMm],
         ];
+      case TrussPreset.prattTruss:
+        return [
+          [0.0, 0.0],
+          [lMm, 0.0],
+          [2.0 * lMm, 0.0],
+          [3.0 * lMm, 0.0],
+          [0.0, lMm],
+          [lMm, lMm],
+          [2.0 * lMm, lMm],
+          [3.0 * lMm, lMm],
+        ];
+      case TrussPreset.warrenTruss:
+        final h = 0.866 * lMm;
+        return [
+          [0.0, 0.0],
+          [lMm, 0.0],
+          [2.0 * lMm, 0.0],
+          [3.0 * lMm, 0.0],
+          [0.5 * lMm, h],
+          [1.5 * lMm, h],
+          [2.5 * lMm, h],
+        ];
+      case TrussPreset.roofFinkTruss:
+        return [
+          [0.0, 0.0],
+          [1.5 * lMm, 0.0],
+          [3.0 * lMm, 0.0],
+          [0.75 * lMm, 0.6 * lMm],
+          [1.5 * lMm, 1.2 * lMm],
+          [2.25 * lMm, 0.6 * lMm],
+        ];
+      case TrussPreset.cantileverTruss:
+        return [
+          [0.0, 0.0],
+          [0.0, lMm],
+          [lMm, 0.0],
+          [lMm, 0.85 * lMm],
+          [2.0 * lMm, 0.0],
+          [2.0 * lMm, 0.6 * lMm],
+        ];
     }
-  }
-
-  static List<List<double>> _resolveCoords(
-    List<List<double>> defCoords,
-    List<List<double>>? customCoords,
-    List<List<int>> conn,
-  ) {
-    if (customCoords == null || customCoords.length != defCoords.length) {
-      return defCoords;
-    }
-    final cand = [
-      for (final c in customCoords)
-        [
-          (c.isNotEmpty && c[0].isFinite) ? c[0].clamp(-100000.0, 100000.0).toDouble() : 0.0,
-          (c.length >= 2 && c[1].isFinite) ? c[1].clamp(-100000.0, 100000.0).toDouble() : 0.0,
-        ],
-    ];
-    // Kiểm tra an toàn không để thanh nào bị suy biến chiều dài bằng 0
-    for (final e in conn) {
-      final ni = e[0] - 1;
-      final nj = e[1] - 1;
-      final len = math.sqrt(
-        math.pow(cand[nj][0] - cand[ni][0], 2) + math.pow(cand[nj][1] - cand[ni][1], 2),
-      );
-      if (len < 10.0) return defCoords;
-    }
-    return cand;
   }
 
   static List<double> _resolveAreas(
@@ -1327,23 +1622,83 @@ class TrussModelData {
     double aMm2 = 2001.0,
     double pKn = 208.0,
     double nu = 0.30,
+    double yieldFyMpa = 250.0,
+    bool materialNonlinear = false,
+    double hardeningRatio = 0.02,
     SectionShape sectionShape = SectionShape.iSection,
     CustomSectionGeometry? customSection,
     List<ElementSectionConfig>? elementSections,
     List<List<double>>? customCoords,
+    List<List<int>>? customConn,
+    List<List<double>>? customNodalLoadsKn,
     List<NodeSupportType>? customSupports,
     List<SupportDirection>? customDirections,
     double springStiffnessKnMm = 500.0,
   }) {
+    final defCoords = defaultCoordsFor(preset, lMm);
+    final defConn = defaultConnFor(preset);
     final defSup = defaultSupportsFor(preset);
-    final supports = (customSupports != null && customSupports.length == defSup.length)
-        ? List<NodeSupportType>.from(customSupports)
-        : List<NodeSupportType>.from(defSup);
-    final directions = (customDirections != null && customDirections.length == defSup.length)
-        ? List<SupportDirection>.from(customDirections)
-        : List<SupportDirection>.filled(defSup.length, SupportDirection.auto);
+    final defDir = defaultDirectionsFor(preset);
+    final defLoads = defaultNodalLoadsKnFor(preset, pKn);
+
+    // Cho phép thêm / xóa nút & thanh động (Custom Truss Builder) an toàn 100%
+    List<List<double>> coords = defCoords;
+    List<List<int>> conn = defConn;
+    if (customCoords != null && customCoords.length >= 2) {
+      final candCoords = [
+        for (final c in customCoords)
+          [
+            (c.isNotEmpty && c[0].isFinite) ? c[0].clamp(-100000.0, 100000.0).toDouble() : 0.0,
+            (c.length >= 2 && c[1].isFinite) ? c[1].clamp(-100000.0, 100000.0).toDouble() : 0.0,
+          ],
+      ];
+      final candConn = (customConn != null && customConn.isNotEmpty)
+          ? [
+              for (final e in customConn)
+                if (e.length >= 2 &&
+                    e[0] >= 1 &&
+                    e[0] <= candCoords.length &&
+                    e[1] >= 1 &&
+                    e[1] <= candCoords.length &&
+                    e[0] != e[1])
+                  [e[0], e[1]],
+            ]
+          : (candCoords.length == defCoords.length ? defConn : <List<int>>[]);
+      bool validLen = candConn.isNotEmpty;
+      for (final e in candConn) {
+        final len = math.sqrt(
+          math.pow(candCoords[e[1] - 1][0] - candCoords[e[0] - 1][0], 2) +
+              math.pow(candCoords[e[1] - 1][1] - candCoords[e[0] - 1][1], 2),
+        );
+        if (len < 10.0) {
+          validLen = false;
+          break;
+        }
+      }
+      if (validLen) {
+        coords = candCoords;
+        conn = candConn;
+      }
+    }
+
+    final nNodes = coords.length;
+    final nElems = conn.length;
+
+    final supports = [
+      for (int i = 0; i < nNodes; i++)
+        (customSupports != null && i < customSupports.length)
+            ? customSupports[i]
+            : (i < defSup.length ? defSup[i] : NodeSupportType.free),
+    ];
+    final directions = [
+      for (int i = 0; i < nNodes; i++)
+        (customDirections != null && i < customDirections.length)
+            ? customDirections[i]
+            : (i < defDir.length ? defDir[i] : SupportDirection.auto),
+    ];
     final fixed = fixedDofsFromSupports(supports);
-    final usePerElem = elementSections != null && elementSections.length == defaultElemCountFor(preset);
+
+    final usePerElem = elementSections != null && elementSections.length == nElems;
     final effectiveA = (!usePerElem && customSection != null)
         ? customSection.computedAreaMm2(sectionShape)
         : aMm2;
@@ -1352,138 +1707,132 @@ class TrussModelData {
         : const <ElementSectionConfig>[];
     final primaryShape = usePerElem ? elementSections.first.shape : sectionShape;
 
+    // Diện tích cơ sở mặc định theo từng bài toán mẫu
+    List<double> baseAreas;
+    if (preset == TrussPreset.dahlblomEx91 && nElems == 2) {
+      baseAreas = const [2000.0, 500.0];
+    } else if (preset == TrussPreset.calfemExs3 && nElems == 3) {
+      baseAreas = const [600.0, 300.0, 1000.0];
+    } else if (preset == TrussPreset.assignment5Bar && nElems == 5) {
+      final diagA = 2.0 * math.sqrt(2.0) * effectiveA;
+      baseAreas = [effectiveA, effectiveA, effectiveA, diagA, diagA];
+    } else {
+      baseAreas = List<double>.filled(nElems, effectiveA);
+    }
+    final areas = _resolveAreas(baseAreas, usePerElem ? elementSections : null);
+
+    // Tải trọng tham chiếu fRef (N) từ tải từng nút tùy biến hoặc mặc định
+    final nodalLoads = [
+      for (int i = 0; i < nNodes; i++)
+        (customNodalLoadsKn != null && i < customNodalLoadsKn.length && customNodalLoadsKn[i].length >= 2)
+            ? [customNodalLoadsKn[i][0], customNodalLoadsKn[i][1]]
+            : (i < defLoads.length ? defLoads[i] : [0.0, 0.0]),
+    ];
+    final fRef = <double>[
+      for (final ld in nodalLoads) ...[ld[0] * 1000.0, ld[1] * 1000.0],
+    ];
+
+    final isDefaultTopology = nNodes == defCoords.length && nElems == defConn.length && customConn == null;
+    final double resolvedE = (preset == TrussPreset.dahlblomEx91 || preset == TrussPreset.calfemExs3)
+        ? 200000.0
+        : eMpa;
+    final double resolvedFy = preset == TrussPreset.dahlblomEx91 ? math.max(yieldFyMpa, 355.0) : yieldFyMpa;
+
+    String modelName;
+    String modelDesc;
+    List<String> memberLabels;
+    List<String> baseNodeNames;
+    double baseLOut = lMm;
+    double basePOut = pKn;
+
     switch (preset) {
       case TrussPreset.dahlblomEx91:
-        const conn91 = [
-          [1, 3],
-          [2, 3],
-        ];
-        final coords91 = _resolveCoords(defaultCoordsFor(preset, lMm), customCoords, conn91);
-        final areas91 = _resolveAreas(const [2000.0, 500.0], usePerElem ? elementSections : null);
-        return TrussModelData(
-          name: 'Dahlblom Example 9.1',
-          description: 'Ví dụ kiểm chứng phi tuyến bar2g (Dahlblom 2016, tr. 260-261)',
-          coords: coords91,
-          conn: conn91,
-          areas: areas91,
-          E: 200000.0,
-          nu: nu,
-          fyRef: 355.0,
-          fixedDofs0: fixed,
-          nodeSupports: supports,
-          supportDirections: directions,
-          springStiffnessKnMm: springStiffnessKnMm,
-          fRef: const [0.0, 0.0, 0.0, 0.0, -10.0e6, -0.2e6],
-          memberLabels: const ['1-3 (AB)', '2-3 (CB)'],
-          nodeLabels: _buildNodeLabels(const ['Nút 1 (A)', 'Nút 2 (C)', 'Nút 3 (B)'], supports),
-          sectionShape: primaryShape,
-          customSection: usePerElem ? null : customSection,
-          elementSections: resolvedSecList,
-          baseL: 1600.0,
-          baseA: areas91[0],
-          basePKn: 10000.0,
-        );
+        modelName = 'Dahlblom Example 9.1';
+        modelDesc = 'Ví dụ kiểm chứng phi tuyến bar2g (Dahlblom 2016, tr. 260-261)';
+        memberLabels = isDefaultTopology
+            ? const ['1-3 (AB)', '2-3 (CB)']
+            : [for (final c in conn) '${c[0]}-${c[1]}'];
+        baseNodeNames = isDefaultTopology
+            ? const ['Nút 1 (A)', 'Nút 2 (C)', 'Nút 3 (B)']
+            : [for (int i = 0; i < nNodes; i++) 'Nút ${i + 1}'];
+        baseLOut = 1600.0;
+        basePOut = 10000.0;
+        break;
       case TrussPreset.calfemExs3:
-        const connEx3 = [
-          [1, 3],
-          [3, 4],
-          [2, 3],
-        ];
-        final coordsEx3 = _resolveCoords(defaultCoordsFor(preset, lMm), customCoords, connEx3);
-        final areasEx3 = _resolveAreas(const [600.0, 300.0, 1000.0], usePerElem ? elementSections : null);
-        return TrussModelData(
-          name: 'CALFEM 3.4 exs3.m',
-          description: 'Ví dụ chuẩn CALFEM 3.4 exs3 (calfem34.pdf tr. 9.3-9..12)',
-          coords: coordsEx3,
-          conn: connEx3,
-          areas: areasEx3,
-          E: 200000.0,
-          nu: nu,
-          fyRef: 250.0,
-          fixedDofs0: fixed,
-          nodeSupports: supports,
-          supportDirections: directions,
-          springStiffnessKnMm: springStiffnessKnMm,
-          fRef: const [0.0, 0.0, 0.0, 0.0, 0.0, -80000.0, 0.0, 0.0],
-          memberLabels: const ['1-3', '3-4', '2-3'],
-          nodeLabels: _buildNodeLabels(const ['Nút 1', 'Nút 2', 'Nút 3', 'Nút 4'], supports),
-          sectionShape: primaryShape,
-          customSection: usePerElem ? null : customSection,
-          elementSections: resolvedSecList,
-          baseL: 1600.0,
-          baseA: areasEx3[0],
-          basePKn: 80.0,
-        );
+        modelName = 'CALFEM 3.4 exs3.m';
+        modelDesc = 'Ví dụ chuẩn CALFEM 3.4 exs3 (calfem34.pdf tr. 9.3-9..12)';
+        memberLabels = [for (final c in conn) '${c[0]}-${c[1]}'];
+        baseNodeNames = [for (int i = 0; i < nNodes; i++) 'Nút ${i + 1}'];
+        baseLOut = 1600.0;
+        basePOut = 80.0;
+        break;
       case TrussPreset.vonMisesArch:
-        const connVM = [
-          [1, 2],
-          [2, 3],
-        ];
-        final coordsVM = _resolveCoords(defaultCoordsFor(preset, lMm), customCoords, connVM);
-        final areasVM = _resolveAreas([effectiveA, effectiveA], usePerElem ? elementSections : null);
-        return TrussModelData(
-          name: 'Vòm Von Mises 2 thanh',
-          description: 'Vòm dàn nông 2 thanh minh họa bật nhảy Snap-Through (McGuire Ex 9.2)',
-          coords: coordsVM,
-          conn: connVM,
-          areas: areasVM,
-          E: eMpa,
-          nu: nu,
-          fyRef: 250.0,
-          fixedDofs0: fixed,
-          nodeSupports: supports,
-          supportDirections: directions,
-          springStiffnessKnMm: springStiffnessKnMm,
-          fRef: [0.0, 0.0, 0.0, -pKn * 1000.0, 0.0, 0.0],
-          memberLabels: const ['1-2', '2-3'],
-          nodeLabels: _buildNodeLabels(const ['Nút 1', 'Nút 2', 'Nút 3'], supports),
-          sectionShape: primaryShape,
-          customSection: usePerElem ? null : customSection,
-          elementSections: resolvedSecList,
-          baseL: lMm,
-          baseA: areasVM[0],
-          basePKn: pKn,
-        );
+        modelName = 'Vòm Von Mises 2 thanh';
+        modelDesc = 'Vòm dàn nông minh họa bật nhảy Snap-Through (McGuire Ex 9.2)';
+        memberLabels = [for (final c in conn) '${c[0]}-${c[1]}'];
+        baseNodeNames = [for (int i = 0; i < nNodes; i++) 'Nút ${i + 1}'];
+        break;
+      case TrussPreset.prattTruss:
+        modelName = 'Dàn cầu Pratt ($nNodes nút – $nElems thanh)';
+        modelDesc = 'Hệ dàn cầu thép Pratt 3 khoang (nhịp ${(3 * lMm / 1000).toStringAsFixed(1)} m, cao ${(lMm / 1000).toStringAsFixed(1)} m)';
+        memberLabels = [for (final c in conn) '${c[0]}-${c[1]}'];
+        baseNodeNames = [for (int i = 0; i < nNodes; i++) 'Nút ${i + 1}'];
+        break;
+      case TrussPreset.warrenTruss:
+        modelName = 'Dàn thép Warren ($nNodes nút – $nElems thanh)';
+        modelDesc = 'Hệ dàn thép Warren tam giác cân đối 3 khoang';
+        memberLabels = [for (final c in conn) '${c[0]}-${c[1]}'];
+        baseNodeNames = [for (int i = 0; i < nNodes; i++) 'Nút ${i + 1}'];
+        break;
+      case TrussPreset.roofFinkTruss:
+        modelName = 'Dàn mái dốc Fink ($nNodes nút – $nElems thanh)';
+        modelDesc = 'Hệ vì kèo mái thép dốc 2 mái chịu tải tập trung nút cánh thượng';
+        memberLabels = [for (final c in conn) '${c[0]}-${c[1]}'];
+        baseNodeNames = [for (int i = 0; i < nNodes; i++) 'Nút ${i + 1}'];
+        break;
+      case TrussPreset.cantileverTruss:
+        modelName = 'Dàn công-xôn vươn ($nNodes nút – $nElems thanh)';
+        modelDesc = 'Hệ dàn công-xôn vát ngàm khớp bên trái chịu tải đầu mút';
+        memberLabels = [for (final c in conn) '${c[0]}-${c[1]}'];
+        baseNodeNames = [for (int i = 0; i < nNodes; i++) 'Nút ${i + 1}'];
+        break;
       case TrussPreset.assignment5Bar:
-        const conn5 = [
-          [1, 2],
-          [1, 3],
-          [3, 4],
-          [3, 2],
-          [2, 4],
-        ];
-        final coords5 = _resolveCoords(defaultCoordsFor(preset, lMm), customCoords, conn5);
-        final diagA = 2.0 * math.sqrt(2.0) * effectiveA;
-        final areas5 = _resolveAreas(
-          [effectiveA, effectiveA, effectiveA, diagA, diagA],
-          usePerElem ? elementSections : null,
-        );
-        return TrussModelData(
-          name: 'Dàn 4 nút – 5 thanh (Đề bài 1.jpg)',
-          description:
-              'L=${lMm.toStringAsFixed(0)} mm, E=${(eMpa / 1000).toStringAsFixed(0)} GPa, '
-              'A=${effectiveA.toStringAsFixed(0)} mm², P=${pKn.toStringAsFixed(1)} kN hướng lên (+Y)',
-          coords: coords5,
-          conn: conn5,
-          areas: areas5,
-          E: eMpa,
-          nu: nu,
-          fyRef: 250.0,
-          fixedDofs0: fixed,
-          nodeSupports: supports,
-          supportDirections: directions,
-          springStiffnessKnMm: springStiffnessKnMm,
-          fRef: [0.0, 0.0, 0.0, pKn * 1000.0, 0.0, 0.0, 0.0, 0.0],
-          memberLabels: const ['1-2', '1-3', '3-4', '3-2', '2-4'],
-          nodeLabels: _buildNodeLabels(const ['Nút 1', 'Nút 2', 'Nút 3', 'Nút 4'], supports),
-          sectionShape: primaryShape,
-          customSection: usePerElem ? null : customSection,
-          elementSections: resolvedSecList,
-          baseL: lMm,
-          baseA: effectiveA,
-          basePKn: pKn,
-        );
+        modelName = isDefaultTopology
+            ? 'Dàn 4 nút – 5 thanh (Đề bài 1.jpg)'
+            : 'Dàn tùy biến ($nNodes nút – $nElems thanh)';
+        modelDesc =
+            'L=${lMm.toStringAsFixed(0)} mm, E=${(resolvedE / 1000).toStringAsFixed(0)} GPa, '
+            'A=${effectiveA.toStringAsFixed(0)} mm², P=${pKn.toStringAsFixed(1)} kN';
+        memberLabels = [for (final c in conn) '${c[0]}-${c[1]}'];
+        baseNodeNames = [for (int i = 0; i < nNodes; i++) 'Nút ${i + 1}'];
+        break;
     }
+
+    return TrussModelData(
+      name: modelName,
+      description: modelDesc,
+      coords: coords,
+      conn: conn,
+      areas: areas,
+      E: resolvedE,
+      nu: nu,
+      fyRef: resolvedFy,
+      materialNonlinear: materialNonlinear,
+      hardeningRatio: hardeningRatio,
+      fixedDofs0: fixed,
+      nodeSupports: supports,
+      supportDirections: directions,
+      springStiffnessKnMm: springStiffnessKnMm,
+      fRef: fRef,
+      memberLabels: memberLabels,
+      nodeLabels: _buildNodeLabels(baseNodeNames, supports),
+      sectionShape: primaryShape,
+      customSection: usePerElem ? null : customSection,
+      elementSections: resolvedSecList,
+      baseL: baseLOut,
+      baseA: areas.isNotEmpty ? areas[0] : effectiveA,
+      basePKn: basePOut,
+    );
   }
 }
 
@@ -1527,6 +1876,8 @@ class TrussAnalysisResult {
   final int totalIterations;
   final int totalFactorizations;
   final List<LoadStepRecord> history;
+  final List<double> iterResidualsN; // Lịch sử sai số lực dư ||R||∞ từng vòng lặp bước cuối (vẽ đồ thị hội tụ bậc 2!)
+  final List<bool> yieldedElems;     // Danh dấu thanh đã chảy dẻo (|σ| ≥ f_y)
   final String? warningMessage;
 
   const TrussAnalysisResult({
@@ -1549,7 +1900,53 @@ class TrussAnalysisResult {
     required this.totalIterations,
     required this.totalFactorizations,
     required this.history,
+    this.iterResidualsN = const [],
+    this.yieldedElems = const [],
     this.warningMessage,
+  });
+}
+
+/// Kết quả kiểm tra bền & ổn định tổng thể từng thanh thép (TCVN 5575 / EN 1993-1-1)
+class MemberDesignCheck {
+  final int elemIndex;
+  final String memberLabel;
+  final double lengthMm;
+  final double slenderness;      // Độ mảnh λ = L_0 / i_min
+  final double chiBuckling;      // Hệ số uốn dọc χ ∈ (0, 1]
+  final double nDemandKn;        // Nội lực tác dụng N (kN)
+  final double nCapacityKn;      // Khả năng chịu lực thiết kế N_Rd (kN)
+  final double utilizationPct;   // Tỷ số làm việc U (%) = 100 * |N| / N_Rd
+  final bool isYielded;          // |σ| ≥ f_y
+  final bool passed;             // U ≤ 100%
+  final String governingMode;    // 'Bền kéo', 'Ổn định nén (uốn dọc)', 'Không lực'
+
+  const MemberDesignCheck({
+    required this.elemIndex,
+    required this.memberLabel,
+    required this.lengthMm,
+    required this.slenderness,
+    required this.chiBuckling,
+    required this.nDemandKn,
+    required this.nCapacityKn,
+    required this.utilizationPct,
+    required this.isYielded,
+    required this.passed,
+    required this.governingMode,
+  });
+}
+
+/// Kết quả phân tích mất ổn định trị riêng đàn hồi: det(K_e + α_cr · K_g) = 0
+class BucklingAnalysisResult {
+  final bool hasBucklingMode;
+  final double alphaCr;          // Hệ số tải tới hạn α_cr
+  final double pCrKn;            // Tải tới hạn tương đương α_cr · P_ref (kN)
+  final List<double> modeShape;  // Véc-tơ dạng mất ổn định chuẩn hóa (2*nNodes, max |φ| = 1)
+
+  const BucklingAnalysisResult({
+    required this.hasBucklingMode,
+    required this.alphaCr,
+    required this.pCrKn,
+    required this.modeShape,
   });
 }
 
@@ -1834,25 +2231,64 @@ class CalfemNonlinearEngine {
       if (!isTotalLagrangian) {
         final dlExact = dl2 / (lCur + l0);
         eps = dlExact / l0;
-        nPhys = ea * eps;
-        en = 0.5 * ea * l0 * eps * eps;
+        double eTan = model.E;
+        if (model.materialNonlinear) {
+          final fy = math.max(10.0, model.fyRef);
+          final et = model.E * model.hardeningRatio.clamp(0.002, 1.0);
+          final epsY = fy / model.E;
+          if (eps.abs() <= epsY) {
+            nPhys = ea * eps;
+            en = 0.5 * ea * l0 * eps * eps;
+          } else {
+            final sgn = eps >= 0 ? 1.0 : -1.0;
+            final sig = sgn * (fy + et * (eps.abs() - epsY));
+            nPhys = sig * model.areas[e];
+            eTan = et;
+            final elEn = 0.5 * fy * epsY;
+            final plEn = fy * (eps.abs() - epsY) + 0.5 * et * math.pow(eps.abs() - epsY, 2);
+            en = (elEn + plEn) * model.areas[e] * l0;
+          }
+        } else {
+          nPhys = ea * eps;
+          en = 0.5 * ea * l0 * eps * eps;
+        }
         fe = [-nPhys * cCur, -nPhys * sCur, nPhys * cCur, nPhys * sCur];
-        final kMat = ea / l0;
+        final kMat = (eTan * model.areas[e]) / l0;
         final kGeo = nPhys / lCur;
         k11 = kMat * cCur * cCur + kGeo * sCur * sCur;
         k12 = (kMat - kGeo) * cCur * sCur;
         k22 = kMat * sCur * sCur + kGeo * cCur * cCur;
       } else {
         eps = dl2 / (2.0 * l0 * l0);
-        final sn = ea * eps;
-        en = 0.5 * ea * l0 * eps * eps;
+        double sn;
+        double eTan = model.E;
+        if (model.materialNonlinear) {
+          final fy = math.max(10.0, model.fyRef);
+          final et = model.E * model.hardeningRatio.clamp(0.002, 1.0);
+          final epsY = fy / model.E;
+          if (eps.abs() <= epsY) {
+            sn = ea * eps;
+            en = 0.5 * ea * l0 * eps * eps;
+          } else {
+            final sgn = eps >= 0 ? 1.0 : -1.0;
+            final sig = sgn * (fy + et * (eps.abs() - epsY));
+            sn = sig * model.areas[e];
+            eTan = et;
+            en = (0.5 * fy * epsY + fy * (eps.abs() - epsY) + 0.5 * et * math.pow(eps.abs() - epsY, 2)) *
+                model.areas[e] *
+                l0;
+          }
+        } else {
+          sn = ea * eps;
+          en = 0.5 * ea * l0 * eps * eps;
+        }
         fe = [
           -(sn / l0) * dxc,
           -(sn / l0) * dyc,
           (sn / l0) * dxc,
           (sn / l0) * dyc,
         ];
-        final cMat = ea / (l0 * l0 * l0);
+        final cMat = (eTan * model.areas[e]) / (l0 * l0 * l0);
         final kGeo = sn / l0;
         k11 = cMat * dxc * dxc + kGeo;
         k12 = cMat * dxc * dyc;
@@ -1995,11 +2431,13 @@ class CalfemNonlinearEngine {
     required int totalIterations,
     required int totalFactorizations,
     required List<LoadStepRecord> history,
+    List<double> iterResidualsN = const [],
     String? warningMessage,
   }) {
     final ne = model.nElems;
     final nd = model.nDofs;
     final stress = [for (int e = 0; e < ne; e++) nForces[e] / model.areas[e]];
+    final yielded = [for (int e = 0; e < ne; e++) stress[e].abs() >= model.fyRef - 1e-6];
     final elong = [for (int e = 0; e < ne; e++) lengths[e] - model.initialLength(e)];
     final kSpr = model.springKPerDofNmm;
     double springEnergy = 0.0;
@@ -2055,6 +2493,8 @@ class CalfemNonlinearEngine {
       totalIterations: totalIterations,
       totalFactorizations: totalFactorizations,
       history: history,
+      iterResidualsN: iterResidualsN,
+      yieldedElems: yielded,
       warningMessage: warningMessage,
     );
   }
@@ -2305,18 +2745,21 @@ class CalfemNonlinearEngine {
     int totalIt = 0;
     bool allConv = true;
     var state = _assembleNonlinear(model, u, isTotalLagrangian);
+    var lastStepRes = <double>[];
 
     for (int s = 1; s <= nSteps; s++) {
       final lam = loadFactor * s / nSteps;
       bool stepConv = false;
       int nIt = 0;
       double resInf = 0.0;
+      final stepRes = <double>[];
 
       for (int it = 1; it <= maxIter; it++) {
         nIt = it;
         state = _assembleNonlinear(model, u, isTotalLagrangian);
         final resF = [for (final d in free) lam * model.fRef[d] - state.fInt[d]];
         resInf = resF.fold(0.0, (m, v) => math.max(m, v.abs()));
+        if (it == 1) stepRes.add(resInf);
         if (resInf < tolForce) {
           stepConv = true;
           break;
@@ -2328,11 +2771,13 @@ class CalfemNonlinearEngine {
         totalIt++;
         state = _assembleNonlinear(model, u, isTotalLagrangian);
         resInf = free.fold(0.0, (m, d) => math.max(m, (lam * model.fRef[d] - state.fInt[d]).abs()));
+        stepRes.add(resInf);
         if (resInf < tolForce) {
           stepConv = true;
           break;
         }
       }
+      lastStepRes = stepRes;
       if (!stepConv) {
         allConv = false;
         break;
@@ -2363,6 +2808,7 @@ class CalfemNonlinearEngine {
       totalIterations: totalIt,
       totalFactorizations: totalIt,
       history: history,
+      iterResidualsN: lastStepRes,
     );
   }
 
@@ -2673,11 +3119,13 @@ class CalfemNonlinearEngine {
 
     final nForce = resultNL.nForcesN[e];
     final sigmaAxial = resultNL.stressMpa[e];
+    final shapeE = model.sectionShapeForElem(e);
     final dims = model.sectionDimsForElem(e);
+    final bounds = dims.rotatedBounds(shapeE);
     final pEuler = (math.pi * math.pi) * model.E * dims.iMinor / (l0 * l0);
 
-    final yFiber = 0.5 * dims.height * eta;
-    final zFiber = 0.5 * dims.width * zeta;
+    final yFiber = 0.5 * bounds.height * eta;
+    final zFiber = 0.5 * bounds.width * zeta;
     double sigmaBend = 0.0;
     double daf = 1.0;
     if (imperfectionRatio > 0.0 && nForce.abs() > 1e-6) {
@@ -2690,7 +3138,7 @@ class CalfemNonlinearEngine {
       }
       final mSec = nForce.abs() * e0 * daf * math.sin(math.pi * xiC);
       final signB = nForce < 0 ? -1.0 : 1.0;
-      sigmaBend = signB * (mSec * yFiber / math.max(1e-9, dims.ix));
+      sigmaBend = signB * (mSec * yFiber / math.max(1e-9, dims.ixRotated));
     }
 
     final sigmaXx = sigmaAxial + sigmaBend;
@@ -2734,6 +3182,237 @@ class CalfemNonlinearEngine {
       zFiberMm: zFiber,
       stateLabel: stateLbl,
       sectionDims: dims,
+    );
+  }
+
+  /// 10. Kiểm tra bền kéo & ổn định uốn dọc tổng thể từng thanh (TCVN 5575 / EN 1993-1-1)
+  static List<MemberDesignCheck> checkMembers(
+    TrussModelData model,
+    TrussAnalysisResult result,
+  ) {
+    final fy = math.max(10.0, model.fyRef);
+    final out = <MemberDesignCheck>[];
+    for (int e = 0; e < model.nElems; e++) {
+      final l0 = model.initialLength(e);
+      final shapeE = model.sectionShapeForElem(e);
+      final dims = model.sectionDimsForElem(e);
+      final iMin = math.max(1.0, dims.rGyrationMin);
+      final slend = l0 / iMin;
+      final nKn = result.nForcesN[e] / 1000.0;
+      final a = model.areas[e];
+
+      // Hệ số sai lệch ban đầu α theo đường cong ổn định EN 1993-1-1 Bảng 6.2
+      final double alphaImp = (shapeE == SectionShape.circTube || shapeE == SectionShape.boxSection)
+          ? 0.21
+          : (shapeE == SectionShape.iSection ? 0.34 : 0.49);
+
+      final lamBar = slend / (math.pi * math.sqrt(model.E / fy));
+      double chi = 1.0;
+      if (lamBar > 0.2) {
+        final phi = 0.5 * (1.0 + alphaImp * (lamBar - 0.2) + lamBar * lamBar);
+        final disc = math.sqrt(math.max(0.0, phi * phi - lamBar * lamBar));
+        chi = math.min(1.0, 1.0 / math.max(1e-9, phi + disc));
+      }
+
+      final nTensCapKn = a * fy / 1000.0;
+      final nCompCapKn = chi * a * fy / 1000.0;
+      final bool isComp = nKn < -1e-4;
+      final double capKn = isComp ? nCompCapKn : nTensCapKn;
+      final double utilPct = capKn > 1e-6 ? 100.0 * nKn.abs() / capKn : 0.0;
+      final bool yielded = result.stressMpa[e].abs() >= fy - 1e-6;
+      final String mode = nKn.abs() < 1e-4
+          ? 'Không lực'
+          : (isComp ? 'Ổn định nén (χ=${chi.toStringAsFixed(2)})' : 'Bền kéo (N/A ≤ fy)');
+
+      out.add(MemberDesignCheck(
+        elemIndex: e,
+        memberLabel: model.memberLabels[e],
+        lengthMm: l0,
+        slenderness: slend,
+        chiBuckling: chi,
+        nDemandKn: nKn,
+        nCapacityKn: capKn,
+        utilizationPct: utilPct,
+        isYielded: yielded,
+        passed: utilPct <= 100.0 && !yielded,
+        governingMode: mode,
+      ));
+    }
+    return out;
+  }
+
+  /// 11. Phân tích mất ổn định trị riêng đàn hồi: det(K_e + α_cr · K_g) = 0
+  /// Sử dụng phân rã Cholesky K_e = L·Lᵀ + Jacobi đối xứng chính xác tuyệt đối!
+  static BucklingAnalysisResult solveElasticBuckling(
+    TrussModelData model,
+    TrussAnalysisResult resLinear,
+  ) {
+    final nd = model.nDofs;
+    final zeroMode = List<double>.filled(nd, 0.0);
+    if (checkKinematicStability(model) != null) {
+      return BucklingAnalysisResult(hasBucklingMode: false, alphaCr: 0.0, pCrKn: 0.0, modeShape: zeroMode);
+    }
+    final free = model.freeDofs0;
+    final n = free.length;
+    if (n == 0) {
+      return BucklingAnalysisResult(hasBucklingMode: false, alphaCr: 0.0, pCrKn: 0.0, modeShape: zeroMode);
+    }
+
+    final keFull = _zeros(nd);
+    final kgFull = _zeros(nd);
+    final kSpr = model.springKPerDofNmm;
+    for (int e = 0; e < model.nElems; e++) {
+      final ni = model.conn[e][0] - 1;
+      final nj = model.conn[e][1] - 1;
+      final x1 = model.coords[ni][0], y1 = model.coords[ni][1];
+      final x2 = model.coords[nj][0], y2 = model.coords[nj][1];
+      final ke = bar2e(x1, y1, x2, y2, model.E, model.areas[e]);
+      final kTot = bar2g(x1, y1, x2, y2, model.E, model.areas[e], resLinear.nForcesN[e]);
+      final dofs = model.elemDofs0(e);
+      for (int a = 0; a < 4; a++) {
+        for (int b = 0; b < 4; b++) {
+          keFull[dofs[a]][dofs[b]] += ke[a][b];
+          kgFull[dofs[a]][dofs[b]] += (kTot[a][b] - ke[a][b]);
+        }
+      }
+    }
+    for (int d = 0; d < nd; d++) {
+      keFull[d][d] += kSpr[d];
+    }
+
+    final ke = _subMatrix(keFull, free);
+    final negKg = [
+      for (int i = 0; i < n; i++)
+        [for (int j = 0; j < n; j++) -kgFull[free[i]][free[j]]],
+    ];
+
+    // 1. Phân rã Cholesky: K_e = L · Lᵀ
+    final lMat = _zeros(n);
+    for (int i = 0; i < n; i++) {
+      for (int j = 0; j <= i; j++) {
+        double sum = ke[i][j];
+        for (int k = 0; k < j; k++) {
+          sum -= lMat[i][k] * lMat[j][k];
+        }
+        if (i == j) {
+          if (sum <= 1e-12) {
+            return BucklingAnalysisResult(hasBucklingMode: false, alphaCr: 0.0, pCrKn: 0.0, modeShape: zeroMode);
+          }
+          lMat[i][j] = math.sqrt(sum);
+        } else {
+          lMat[i][j] = sum / lMat[j][j];
+        }
+      }
+    }
+
+    // 2. Tính ma trận đối xứng S = L⁻¹ · (-K_g) · L⁻ᵀ bằng thế thuận
+    final yMat = _zeros(n); // L · Y = -K_g
+    for (int col = 0; col < n; col++) {
+      for (int i = 0; i < n; i++) {
+        double sum = negKg[i][col];
+        for (int k = 0; k < i; k++) {
+          sum -= lMat[i][k] * yMat[k][col];
+        }
+        yMat[i][col] = sum / lMat[i][i];
+      }
+    }
+    final sMat = _zeros(n); // L · Sᵀ = Yᵀ  => S = Y · L⁻ᵀ
+    for (int row = 0; row < n; row++) {
+      for (int j = 0; j < n; j++) {
+        double sum = yMat[row][j];
+        for (int k = 0; k < j; k++) {
+          sum -= sMat[row][k] * lMat[j][k];
+        }
+        sMat[row][j] = sum / lMat[j][j];
+      }
+    }
+    // Ép đối xứng hoàn hảo khử nhiễu số học
+    for (int i = 0; i < n; i++) {
+      for (int j = i + 1; j < n; j++) {
+        final avg = 0.5 * (sMat[i][j] + sMat[j][i]);
+        sMat[i][j] = avg;
+        sMat[j][i] = avg;
+      }
+    }
+
+    // 3. Phân rã trị riêng Jacobi cho ma trận đối xứng S
+    final vMat = [
+      for (int i = 0; i < n; i++) [for (int j = 0; j < n; j++) i == j ? 1.0 : 0.0],
+    ];
+    for (int sweep = 0; sweep < 60; sweep++) {
+      int p = 0, q = 1;
+      double maxOff = 0.0;
+      for (int i = 0; i < n; i++) {
+        for (int j = i + 1; j < n; j++) {
+          if (sMat[i][j].abs() > maxOff) {
+            maxOff = sMat[i][j].abs();
+            p = i;
+            q = j;
+          }
+        }
+      }
+      if (maxOff < 1e-14) break;
+      final app = sMat[p][p], aqq = sMat[q][q], apq = sMat[p][q];
+      final tau = (aqq - app) / (2.0 * apq);
+      final t = tau >= 0 ? 1.0 / (tau + math.sqrt(1.0 + tau * tau)) : -1.0 / (-tau + math.sqrt(1.0 + tau * tau));
+      final c = 1.0 / math.sqrt(1.0 + t * t);
+      final s = t * c;
+      sMat[p][p] = app - t * apq;
+      sMat[q][q] = aqq + t * apq;
+      sMat[p][q] = 0.0;
+      sMat[q][p] = 0.0;
+      for (int k = 0; k < n; k++) {
+        if (k == p || k == q) continue;
+        final akp = sMat[k][p], akq = sMat[k][q];
+        sMat[k][p] = c * akp - s * akq;
+        sMat[p][k] = sMat[k][p];
+        sMat[k][q] = s * akp + c * akq;
+        sMat[q][k] = sMat[k][q];
+      }
+      for (int k = 0; k < n; k++) {
+        final vkp = vMat[k][p], vkq = vMat[k][q];
+        vMat[k][p] = c * vkp - s * vkq;
+        vMat[k][q] = s * vkp + c * vkq;
+      }
+    }
+
+    // Chọn trị riêng dương lớn nhất μ_max > 0 -> α_cr = 1 / μ_max (tải tới hạn nhỏ nhất cùng chiều tải!)
+    int bestIdx = -1;
+    double bestMu = 1e-14;
+    for (int i = 0; i < n; i++) {
+      if (sMat[i][i] > bestMu) {
+        bestMu = sMat[i][i];
+        bestIdx = i;
+      }
+    }
+    if (bestIdx < 0) {
+      return BucklingAnalysisResult(hasBucklingMode: false, alphaCr: 0.0, pCrKn: 0.0, modeShape: zeroMode);
+    }
+
+    // 4. Quy đổi ngược véc-tơ riêng: Lᵀ · φ_f = v
+    final phiF = List<double>.filled(n, 0.0);
+    for (int i = n - 1; i >= 0; i--) {
+      double sum = vMat[i][bestIdx];
+      for (int k = i + 1; k < n; k++) {
+        sum -= lMat[k][i] * phiF[k];
+      }
+      phiF[i] = sum / lMat[i][i];
+    }
+    final maxPhi = phiF.fold(0.0, (m, v) => math.max(m, v.abs()));
+    final modeFull = List<double>.filled(nd, 0.0);
+    if (maxPhi > 1e-12) {
+      for (int i = 0; i < n; i++) {
+        modeFull[free[i]] = phiF[i] / maxPhi;
+      }
+    }
+
+    final alphaCr = 1.0 / bestMu;
+    final refLoadMagKn = math.sqrt(model.fRef.fold(0.0, (s, v) => s + v * v)) / 1000.0;
+    return BucklingAnalysisResult(
+      hasBucklingMode: true,
+      alphaCr: alphaCr,
+      pCrKn: alphaCr * (refLoadMagKn > 1e-6 ? refLoadMagKn : model.basePKn.abs()),
+      modeShape: modeFull,
     );
   }
 }

@@ -406,27 +406,34 @@ class ConnectionCalculator {
       final areaBp = params.basePlateWidthMm * params.basePlateLengthMm;
 
       if (sup == NodeSupportType.pin) {
-        final bearingMpa = (ryKn.abs() * 1000.0) / math.max(1.0, areaBp);
+        final supDir = model.resolvedDirectionFor(ni);
+        final isWallDir = supDir == SupportDirection.left || supDir == SupportDirection.right;
+        final normalForceKn = isWallDir ? rxKn.abs() : ryKn.abs();
+        final shearForceKn = isWallDir ? ryKn.abs() : rxKn.abs();
+        final normalSym = isWallDir ? '|R_x|' : '|R_y|';
+        final shearSym = isWallDir ? '|R_y|' : '|R_x|';
+
+        final bearingMpa = (normalForceKn * 1000.0) / math.max(1.0, areaBp);
         final bearUtil = 100.0 * bearingMpa / fjd;
         checks.add(ConnectionCheckItem(
           category: 'Bản đế móng BP ${params.basePlateWidthMm.toStringAsFixed(0)}×${params.basePlateLengthMm.toStringAsFixed(0)}×${params.basePlateThickMm.toStringAsFixed(0)} (Nén BT)',
           clauseRef: 'EN 1993-1-8 Mục 6.2.5',
-          demandLabel: 'p_c = ${bearingMpa.toStringAsFixed(2)} MPa (|R_y|=${ryKn.abs().toStringAsFixed(1)} kN)',
+          demandLabel: 'p_c = ${bearingMpa.toStringAsFixed(2)} MPa ($normalSym=${normalForceKn.toStringAsFixed(1)} kN)',
           capacityLabel: 'f_jd = ${fjd.toStringAsFixed(1)} MPa (C${params.concreteFckMpa.toStringAsFixed(0)})',
           utilizationPct: bearUtil,
-          formulaText: 'A_bp=${(areaBp / 100).toStringAsFixed(0)} cm²; 4×BL neo M24-8.8 + 2 sườn ST12',
+          formulaText: 'Hướng gối ${supDir.label}; A_bp=${(areaBp / 100).toStringAsFixed(0)} cm²; 4×BL neo M24-8.8 + 2 sườn ST12',
         ));
-        // Kiểm tra 4 bu-lông neo M24 chịu cắt ngang R_x & nhổ kéo nếu R_y < 0 (lực nâng tách gối)
+        // Kiểm tra 4 bu-lông neo M24 chịu cắt tiếp tuyến & kéo pháp tuyến theo đúng hướng gối
         final anchorShearCapKn = 4.0 * 0.6 * 800.0 * 353.0 / (gammaM2 * 1000.0);
         final anchorTensCapKn = 4.0 * 0.9 * 800.0 * 353.0 / (gammaM2 * 1000.0);
-        final anchorUtil = 100.0 * (rxKn.abs() / anchorShearCapKn + ryKn.abs() / (1.4 * anchorTensCapKn));
+        final anchorUtil = 100.0 * (shearForceKn / anchorShearCapKn + normalForceKn / (1.4 * anchorTensCapKn));
         checks.add(ConnectionCheckItem(
           category: 'Cụm 4 bu-lông neo móng M24-8.8 (Cắt & Kéo nhổ)',
           clauseRef: 'EN 1993-1-8 Bảng 3.4',
-          demandLabel: 'R_x=${rxKn.toStringAsFixed(1)}, R_y=${ryKn.toStringAsFixed(1)} kN',
+          demandLabel: 'V=$shearSym=${shearForceKn.toStringAsFixed(1)}, N=$normalSym=${normalForceKn.toStringAsFixed(1)} kN',
           capacityLabel: 'V_Rd=${anchorShearCapKn.toStringAsFixed(0)} kN, N_Rd=${anchorTensCapKn.toStringAsFixed(0)} kN',
           utilizationPct: anchorUtil,
-          formulaText: 'Tổ hợp cắt + kéo: |R_x|/V_Rd + |R_y|/(1.4·N_Rd) ≤ 1.0',
+          formulaText: 'Tổ hợp cắt + kéo theo phương gối ${supDir.label}: V/V_Rd + N/(1.4·N_Rd) ≤ 1.0',
         ));
       } else if (sup == NodeSupportType.rollerX || sup == NodeSupportType.rollerY || sup == NodeSupportType.rollerXSpringX) {
         final fnKn = sup == NodeSupportType.rollerY ? rxKn.abs() : ryKn.abs();

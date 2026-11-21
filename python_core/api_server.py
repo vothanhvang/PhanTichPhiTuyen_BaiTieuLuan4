@@ -80,14 +80,24 @@ def _build_model_from_payload(payload: Dict[str, Any]):
             section_shape=str(payload.get("section_shape", "I_SECTION")),
         )
 
-    if "coords_mm" in payload and isinstance(payload["coords_mm"], list):
+    if "coords_mm" in payload and isinstance(payload["coords_mm"], list) and len(payload["coords_mm"]) >= 2:
         cc = payload["coords_mm"]
-        if len(cc) == model.n_nodes and all(isinstance(pt, list) and len(pt) >= 2 for pt in cc):
+        if all(isinstance(pt, list) and len(pt) >= 2 for pt in cc):
             model.coords = np.array([[float(pt[0]), float(pt[1])] for pt in cc], dtype=float)
+            model.node_labels = [f"Nút {i + 1}" for i in range(model.n_nodes)]
+    if "conn" in payload and isinstance(payload["conn"], list) and len(payload["conn"]) >= 1:
+        cn = payload["conn"]
+        if all(isinstance(e, list) and len(e) >= 2 for e in cn):
+            model.conn = np.array([[int(e[0]), int(e[1])] for e in cn], dtype=int)
+            model.member_labels = [f"{int(e[0])}-{int(e[1])}" for e in cn]
     if "areas_mm2" in payload and isinstance(payload["areas_mm2"], list):
         aa = [float(v) for v in payload["areas_mm2"]]
         if len(aa) == model.n_elems and all(v > 0.0 for v in aa):
             model.areas = np.array(aa, dtype=float)
+    if "f_ref_n" in payload and isinstance(payload["f_ref_n"], list):
+        ff = [float(v) for v in payload["f_ref_n"]]
+        if len(ff) == model.n_dofs:
+            model.f_ref = np.array(ff, dtype=float)
     if "fixed_dofs_0" in payload and isinstance(payload["fixed_dofs_0"], list):
         fd = [int(d) for d in payload["fixed_dofs_0"] if 0 <= int(d) < model.n_dofs]
         if fd:

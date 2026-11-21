@@ -1,13 +1,5 @@
 // ============================================================================
-// CỬA SỔ MÔ PHỎNG 2D CHUẨN ANSYS MECHANICAL (PAN, ZOOM, KHẢO SÁT CHẠM, CẮT)
-// ============================================================================
-// Tính năng:
-//   - Hiển thị cấu hình ban đầu (nét đứt) và cấu hình biến dạng phóng đại.
-//   - Tô màu trường kết quả theo bảng màu cầu vồng ANSYS (Ứng suất σ, Biến dạng ε,
-//     Lực dọc N, Chuyển vị ||u||, Mật độ năng lượng u₀).
-//   - Kéo để Pan, cuộn chuột / chụm tay để Zoom.
-//   - NHẤN VÀO BẤT KỲ VỊ TRÍ NÀO TRÊN BẤT KỲ THANH NÀO để đặt đầu dò khảo sát
-//     (Probe Marker) và lưỡi cắt phẫu thuật tại đúng vị trí ξ ∈ [0, 1]!
+// CỬA SỔ MÔ PHỎNG 2D KẾT CẤU DÀN PHẲNG (PAN, ZOOM, CHỌN NÚT & PHẪU THUẬT)
 // ============================================================================
 
 import 'dart:math' as math;
@@ -24,6 +16,7 @@ class AnsysViewport2D extends StatefulWidget {
   final double deformScale;
   final double playbackFraction;
   final int selectedElem;
+  final int? selectedNode;
   final double probeXi;
   final bool surgicalMode;
   final bool darkMode;
@@ -31,7 +24,9 @@ class AnsysViewport2D extends StatefulWidget {
   final ValueChanged<bool>? onToggleColorBar;
   final ConnectionDisplayMode connectionMode;
   final ConnectionDetailType connectionType;
+  final List<MemberDesignCheck>? designChecks;
   final void Function(int elemIndex, double xi) onProbeChanged;
+  final ValueChanged<int>? onNodeTapped;
 
   const AnsysViewport2D({
     super.key,
@@ -41,6 +36,7 @@ class AnsysViewport2D extends StatefulWidget {
     required this.deformScale,
     required this.playbackFraction,
     required this.selectedElem,
+    this.selectedNode,
     required this.probeXi,
     required this.surgicalMode,
     required this.darkMode,
@@ -48,7 +44,9 @@ class AnsysViewport2D extends StatefulWidget {
     this.onToggleColorBar,
     this.connectionMode = ConnectionDisplayMode.schematic,
     this.connectionType = ConnectionDetailType.boltedGusset,
+    this.designChecks,
     required this.onProbeChanged,
+    this.onNodeTapped,
   });
 
   @override
@@ -66,6 +64,43 @@ class _AnsysViewport2DState extends State<AnsysViewport2D> {
       _zoom = 1.0;
       _pan = Offset.zero;
     });
+  }
+
+  void _showControlsHelp(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.help_outline, color: Color(0xFF06B6D4), size: 20),
+            SizedBox(width: 8),
+            Text('Hướng dẫn thao tác khung 2D & Phím tắt', style: TextStyle(fontSize: 14)),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('• Chạm vào THANH: Đặt điểm khảo sát & cắt Phẫu thuật tại vị trí ξ', style: TextStyle(fontSize: 12.2)),
+            SizedBox(height: 4),
+            Text('• Chạm vào NÚT: Chọn nút & mở chi tiết Tab Liên kết', style: TextStyle(fontSize: 12.2)),
+            SizedBox(height: 4),
+            Text('• Kéo chuột / 1 ngón: Di chuyển khung nhìn (Pan)', style: TextStyle(fontSize: 12.2)),
+            SizedBox(height: 4),
+            Text('• Cuộn chuột / Chụm 2 ngón: Phóng to / Thu nhỏ (Zoom)', style: TextStyle(fontSize: 12.2)),
+            Divider(height: 16),
+            Text('Phím tắt nhanh:', style: TextStyle(fontSize: 12.2, fontWeight: FontWeight.bold)),
+            SizedBox(height: 4),
+            Text('• Space: Phát / Tạm dừng mô phỏng tăng tải', style: TextStyle(fontSize: 12)),
+            Text('• 2 / 3: Chuyển nhanh khung nhìn 2D ↔ 3D', style: TextStyle(fontSize: 12)),
+            Text('• Ctrl+Z / Ctrl+Y: Hoàn tác (Undo) / Làm lại (Redo)', style: TextStyle(fontSize: 12)),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Đóng')),
+        ],
+      ),
+    );
   }
 
   List<double> _fieldValuesPerElem(double frac) {
@@ -94,6 +129,11 @@ class _AnsysViewport2DState extends State<AnsysViewport2D> {
         return [
           for (int e = 0; e < ne; e++)
             0.5 * widget.result.stressMpa[e] * widget.result.strain[e] * 1000.0 * frac * frac
+        ];
+      case ContourField.utilizationRatio:
+        final checks = widget.designChecks ?? CalfemNonlinearEngine.checkMembers(widget.model, widget.result);
+        return [
+          for (int e = 0; e < ne; e++) (e < checks.length ? checks[e].utilizationPct : 0.0) * frac,
         ];
     }
   }
@@ -127,6 +167,28 @@ class _AnsysViewport2DState extends State<AnsysViewport2D> {
     final pTap = details.localPosition;
     final scaleDef = widget.deformScale * widget.playbackFraction;
 
+    // 1. Ưu tiên chọn NÚT trực tiếp nếu nhấn gần nút (bán kính 22 px)
+    if (widget.onNodeTapped != null) {
+      int bestNode = -1;
+      double bestNodeDist = 22.0;
+      for (int i = 0; i < widget.model.nNodes; i++) {
+        final pn = tf.toScreen(
+          widget.model.coords[i][0] + scaleDef * widget.result.uMm[2 * i],
+          widget.model.coords[i][1] + scaleDef * widget.result.uMm[2 * i + 1],
+        );
+        final d = (pTap - pn).distance;
+        if (d < bestNodeDist) {
+          bestNodeDist = d;
+          bestNode = i;
+        }
+      }
+      if (bestNode >= 0) {
+        widget.onNodeTapped!(bestNode);
+        return;
+      }
+    }
+
+    // 2. Chọn THANH & vị trí cắt phẫu thuật ξ
     int bestElem = widget.selectedElem;
     double bestXi = widget.probeXi;
     double bestDist = 42.0;
@@ -162,12 +224,9 @@ class _AnsysViewport2DState extends State<AnsysViewport2D> {
   @override
   Widget build(BuildContext context) {
     final vals = _fieldValuesPerElem(widget.playbackFraction);
-    // Khóa cố định thang đo [minV, maxV] theo trạng thái 100% tải (frac = 1.0)
-    // để khi chạy mô phỏng video tăng tải (0% → 100%), dải màu Gradient trên từng thanh
-    // biến đổi liên tục theo thời gian thực từ xanh dương đậm → lơ → lá → vàng → cam → đỏ!
     final fullVals = _fieldValuesPerElem(1.0);
-    double minV = fullVals.reduce(math.min);
-    double maxV = fullVals.reduce(math.max);
+    double minV = fullVals.isEmpty ? 0.0 : fullVals.reduce(math.min);
+    double maxV = fullVals.isEmpty ? 1.0 : fullVals.reduce(math.max);
     if (widget.field == ContourField.displacement) {
       minV = 0.0;
       maxV = 0.0;
@@ -180,6 +239,9 @@ class _AnsysViewport2DState extends State<AnsysViewport2D> {
       }
     } else if (widget.field == ContourField.strainEnergyDensity) {
       minV = 0.0;
+    } else if (widget.field == ContourField.utilizationRatio) {
+      minV = 0.0;
+      maxV = math.max(100.0, maxV);
     } else {
       minV = math.min(0.0, minV);
       maxV = math.max(0.0, maxV);
@@ -231,6 +293,7 @@ class _AnsysViewport2DState extends State<AnsysViewport2D> {
                       deformScale: widget.deformScale * widget.playbackFraction,
                       playbackFraction: widget.playbackFraction,
                       selectedElem: widget.selectedElem,
+                      selectedNode: widget.selectedNode,
                       probeXi: widget.probeXi,
                       surgicalMode: widget.surgicalMode,
                       darkMode: widget.darkMode,
@@ -295,22 +358,37 @@ class _AnsysViewport2DState extends State<AnsysViewport2D> {
                 ),
               ),
             ),
-            // Gợi ý tương tác góc dưới trái
+            // Nút trợ giúp gọn nhẹ góc dưới trái
             Positioned(
               left: 12,
               bottom: 10,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: widget.darkMode ? const Color(0xCC0F172A) : const Color(0xE6FFFFFF),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF06B6D4).withValues(alpha: 0.4)),
-                ),
-                child: Text(
-                  'Chạm vào bất kỳ điểm nào trên thanh để khảo sát & đặt vết cắt phẫu thuật  •  Kéo: Pan  •  Cuộn/Chụm: Zoom',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    color: widget.darkMode ? const Color(0xFF94A3B8) : const Color(0xFF334155),
+              child: Tooltip(
+                message: 'Hướng dẫn thao tác 2D & phím tắt',
+                child: InkWell(
+                  onTap: () => _showControlsHelp(context),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: widget.darkMode ? const Color(0xCC0F172A) : const Color(0xE6FFFFFF),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFF06B6D4).withValues(alpha: 0.55)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.help_outline, size: 14, color: Color(0xFF06B6D4)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Thao tác 2D',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: widget.darkMode ? const Color(0xFFCBD5E1) : const Color(0xFF1E293B),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -351,6 +429,7 @@ class _Ansys2DPainter extends CustomPainter {
   final double deformScale;
   final double playbackFraction;
   final int selectedElem;
+  final int? selectedNode;
   final double probeXi;
   final bool surgicalMode;
   final bool darkMode;
@@ -368,6 +447,7 @@ class _Ansys2DPainter extends CustomPainter {
     required this.deformScale,
     required this.playbackFraction,
     required this.selectedElem,
+    this.selectedNode,
     required this.probeXi,
     required this.surgicalMode,
     required this.darkMode,
@@ -508,12 +588,15 @@ class _Ansys2DPainter extends CustomPainter {
         canvas.drawLine(a, b, pBar);
       }
 
-      // Nhãn giá trị nổi giữa thanh — đồng bộ 100% với trường hiển thị đang chọn
+      // Nhãn giá trị nổi giữa thanh (tự thu gọn khi dàn ≥ 8 thanh để không che hình)
       final mid = Offset(0.5 * (a.dx + b.dx), 0.5 * (a.dy + b.dy));
+      final compact2d = model.nElems >= 8;
       _drawBadge(
         canvas,
         mid + Offset(0, e == 0 ? 22 : (e == 2 ? -22 : 0)),
-        'T${e + 1}(${model.memberLabels[e]}): ${field.symbol} = ${field.formatValue(midVal)}',
+        compact2d
+            ? 'T${e + 1}: ${midVal.toStringAsFixed(1)}'
+            : 'T${e + 1}(${model.memberLabels[e]}): ${field.symbol} = ${field.formatValue(midVal)}',
         barColor,
       );
     }
@@ -524,12 +607,23 @@ class _Ansys2DPainter extends CustomPainter {
     }
     _drawSupportsAndLoads(canvas);
 
-    // 5. Vẽ nút khớp 2D (tô màu & ghi chuyển vị nút thật khi đang xem Chuyển vị tổng ||u||)
+    // 5. Vẽ nút khớp 2D (tô màu & vòng sáng nút đang chọn)
     for (int i = 0; i < model.nNodes; i++) {
       final p = tf.toScreen(
         model.coords[i][0] + deformScale * result.uMm[2 * i],
         model.coords[i][1] + deformScale * result.uMm[2 * i + 1],
       );
+      if (selectedNode == i) {
+        canvas.drawCircle(p, 13.5, Paint()..color = const Color(0xFF06B6D4).withValues(alpha: 0.25));
+        canvas.drawCircle(
+          p,
+          13.5,
+          Paint()
+            ..color = const Color(0xFF00E5FF)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.0,
+        );
+      }
       final uNode = math.sqrt(math.pow(result.uMm[2 * i], 2) + math.pow(result.uMm[2 * i + 1], 2)) * playbackFraction;
       final nodeAccent = field == ContourField.displacement
           ? ansysRainbowColor(((uNode - minVal) / span).clamp(0.0, 1.0))
@@ -559,7 +653,9 @@ class _Ansys2DPainter extends CustomPainter {
         canvas,
         p + const Offset(10, -16),
         nodeLabel,
-        darkMode ? Colors.white : const Color(0xFF0F172A),
+        selectedNode == i
+            ? const Color(0xFF00E5FF)
+            : (darkMode ? Colors.white : const Color(0xFF0F172A)),
         11,
         bold: true,
       );
@@ -614,17 +710,6 @@ class _Ansys2DPainter extends CustomPainter {
       ..color = darkMode ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2;
-
-    double minX = double.infinity, maxX = -double.infinity;
-    double minY = double.infinity, maxY = -double.infinity;
-    for (final c in model.coords) {
-      minX = math.min(minX, c[0]);
-      maxX = math.max(maxX, c[0]);
-      minY = math.min(minY, c[1]);
-      maxY = math.max(maxY, c[1]);
-    }
-    final midX = 0.5 * (minX + maxX);
-    final midY = 0.5 * (minY + maxY);
 
     List<Offset> hull2D(List<Offset> pts) {
       if (pts.length <= 3) return pts;
@@ -891,21 +976,31 @@ class _Ansys2DPainter extends CustomPainter {
         drawSpring2D(Offset(p.dx + sgnX * 7.0, p.dy), anchorX, 'kₓ');
       }
 
-      // Vẽ mũi tên tải trọng ngoài P
+      // Vẽ mũi tên tải trọng ngoài (Fx, Fy) tại mọi nút có tải (tỷ lệ trực quan theo độ lớn lực)
+      double maxNodeF = 1.0;
+      for (int k = 0; k < model.nNodes; k++) {
+        final mk = math.sqrt(model.fRef[2 * k] * model.fRef[2 * k] + model.fRef[2 * k + 1] * model.fRef[2 * k + 1]);
+        if (mk > maxNodeF) maxNodeF = mk;
+      }
       final loadX = model.fRef[2 * i];
       final loadY = model.fRef[2 * i + 1];
       if (loadX.abs() > 1e-3 || loadY.abs() > 1e-3) {
         final mag = math.sqrt(loadX * loadX + loadY * loadY);
         final dirScreen = Offset(loadX / mag, -loadY / mag);
+        final arrowLen = (36.0 + 30.0 * (mag / maxNodeF)).clamp(36.0, 66.0);
         final start = p;
-        final end = p + dirScreen * 58.0;
-        _drawArrow(canvas, start, end, const Color(0xFFFF3B5C), 3.2);
+        final end = p + dirScreen * arrowLen;
+        _drawArrow(canvas, start, end, const Color(0xFFFF3B5C), 3.1);
+        final pShow = mag * playbackFraction / 1000.0;
+        final lbl = (loadX.abs() > 1e-3 && loadY.abs() > 1e-3)
+            ? 'P${i + 1}=${pShow.toStringAsFixed(1)} kN'
+            : 'P = ${pShow.toStringAsFixed(1)} kN';
         _drawText(
           canvas,
           end + const Offset(-26, -18),
-          'P = ${(mag * playbackFraction / 1000.0).toStringAsFixed(1)} kN',
+          lbl,
           const Color(0xFFFF5A79),
-          11,
+          10.5,
           bold: true,
         );
       }

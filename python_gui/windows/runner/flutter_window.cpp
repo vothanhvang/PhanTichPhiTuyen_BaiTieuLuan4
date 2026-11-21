@@ -88,6 +88,54 @@ bool FlutterWindow::OnCreate() {
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
                  result) {
+        if (call.method_name() == "openTextFile") {
+          wchar_t szOpen[MAX_PATH * 4] = {};
+          std::wstring ofilter;
+          ofilter.append(L"CALFEM Project (*.json)");
+          ofilter.push_back(L'\0');
+          ofilter.append(L"*.json");
+          ofilter.push_back(L'\0');
+          ofilter.append(L"T\x1EA5t c\x1EA3 t\x1EC7p (*.*)");
+          ofilter.push_back(L'\0');
+          ofilter.append(L"*.*");
+          ofilter.push_back(L'\0');
+          ofilter.push_back(L'\0');
+
+          OPENFILENAMEW ofn{};
+          ofn.lStructSize = sizeof(ofn);
+          ofn.hwndOwner = GetHandle();
+          ofn.lpstrFilter = ofilter.c_str();
+          ofn.nFilterIndex = 1;
+          ofn.lpstrFile = szOpen;
+          ofn.nMaxFile = static_cast<DWORD>(MAX_PATH * 4);
+          ofn.lpstrTitle = L"M\x1EDF d\x1EF1 \x00E1n CALFEM (.json)";
+          ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST |
+                      OFN_NOCHANGEDIR;
+          if (!GetOpenFileNameW(&ofn)) {
+            result->Success(flutter::EncodableValue());
+            return;
+          }
+          HANDLE hIn = CreateFileW(szOpen, GENERIC_READ, FILE_SHARE_READ,
+                                   nullptr, OPEN_EXISTING,
+                                   FILE_ATTRIBUTE_NORMAL, nullptr);
+          if (hIn == INVALID_HANDLE_VALUE) {
+            result->Error("IO_ERROR", "Không thể mở tệp dự án.");
+            return;
+          }
+          LARGE_INTEGER sz{};
+          GetFileSizeEx(hIn, &sz);
+          std::string content;
+          if (sz.QuadPart > 0 && sz.QuadPart < 20 * 1024 * 1024) {
+            content.resize(static_cast<size_t>(sz.QuadPart));
+            DWORD readBytes = 0;
+            ReadFile(hIn, content.data(), static_cast<DWORD>(sz.QuadPart),
+                     &readBytes, nullptr);
+            content.resize(readBytes);
+          }
+          CloseHandle(hIn);
+          result->Success(flutter::EncodableValue(content));
+          return;
+        }
         if (call.method_name() != "saveFile") {
           result->NotImplemented();
           return;
@@ -140,6 +188,21 @@ bool FlutterWindow::OnCreate() {
           filter.append(L"PDF Document (*.pdf)");
           filter.push_back(L'\0');
           filter.append(L"*.pdf");
+          filter.push_back(L'\0');
+        } else if (ext == "png") {
+          filter.append(L"PNG Image (*.png)");
+          filter.push_back(L'\0');
+          filter.append(L"*.png");
+          filter.push_back(L'\0');
+        } else if (ext == "csv") {
+          filter.append(L"CSV Excel Table (*.csv)");
+          filter.push_back(L'\0');
+          filter.append(L"*.csv");
+          filter.push_back(L'\0');
+        } else if (ext == "json") {
+          filter.append(L"CALFEM Project (*.json)");
+          filter.push_back(L'\0');
+          filter.append(L"*.json");
           filter.push_back(L'\0');
         }
         filter.append(L"T\x1EA5t c\x1EA3 t\x1EC7p (*.*)");
