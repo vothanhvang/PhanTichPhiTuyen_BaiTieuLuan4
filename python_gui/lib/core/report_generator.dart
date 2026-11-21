@@ -126,7 +126,7 @@ class FlutterReportGenerator {
     body.write(_docxParagraph('THUYẾT MINH KẾT QUẢ PHÂN TÍCH PHI TUYẾN HỆ DÀN (CALFEM)',
         bold: true, sizeHalfPt: 28, colorHex: '0F172A', align: 'center'));
     body.write(_docxParagraph(
-        'Giảng viên hướng dẫn: PGS. TS Ngô Hữu Cường  |  Học viên thực hiện: Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624)  |  Liên hệ: vothanhvang@gmail.com  |  Xuất lúc: $ts',
+        'Giảng viên hướng dẫn: PGS. TS Ngô Hữu Cường  |  Học viên thực hiện: Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624)  |  Liên hệ: vothanhvang@gmail.com • ĐT: 0973.993.494  |  Xuất lúc: $ts',
         sizeHalfPt: 17,
         colorHex: '475569',
         align: 'center'));
@@ -359,7 +359,7 @@ class FlutterReportGenerator {
                     textAlign: pw.TextAlign.center),
                 pw.SizedBox(height: 2),
                 pw.Text(
-                    'Giảng viên hướng dẫn: PGS. TS Ngô Hữu Cường | Học viên: Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624) | Liên hệ: vothanhvang@gmail.com | Xuất: $ts',
+                    'Giảng viên hướng dẫn: PGS. TS Ngô Hữu Cường | Học viên: Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624) | Liên hệ: vothanhvang@gmail.com • ĐT: 0973.993.494 | Xuất: $ts',
                     style: pw.TextStyle(fontSize: 7.4, color: slate),
                     textAlign: pw.TextAlign.center),
               ],

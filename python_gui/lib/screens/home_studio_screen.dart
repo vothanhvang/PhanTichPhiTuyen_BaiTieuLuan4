@@ -30,7 +30,14 @@ import '../widgets/charts_and_tables_panel.dart';
 import '../widgets/theory_and_code_panel.dart';
 
 class HomeStudioScreen extends StatefulWidget {
-  const HomeStudioScreen({super.key});
+  final bool initialDarkMode;
+  final ValueChanged<bool>? onThemeChanged;
+
+  const HomeStudioScreen({
+    super.key,
+    this.initialDarkMode = true,
+    this.onThemeChanged,
+  });
 
   @override
   State<HomeStudioScreen> createState() => _HomeStudioScreenState();
@@ -124,6 +131,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
   @override
   void initState() {
     super.initState();
+    _darkMode = widget.initialDarkMode;
     _recomputeLocal();
     _initPythonBridge();
   }
@@ -617,10 +625,10 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                             ),
                             const SizedBox(height: 1),
                             Text(
-                              'ĐH Bách Khoa TP.HCM • GVHD: PGS. TS Ngô Hữu Cường • HV: Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624)',
+                              'ĐH Bách Khoa TP.HCM • GVHD: PGS. TS Ngô Hữu Cường • HV: Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624) • Liên hệ: vothanhvang@gmail.com • ĐT: 0973.993.494',
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: 9.8,
+                                fontSize: 9.7,
                                 fontWeight: FontWeight.w600,
                                 color: _darkMode ? const Color(0xFFFBBF24) : const Color(0xFF0F3D6E),
                               ),
@@ -740,14 +748,18 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                       ),
                     ),
                     IconButton(
-                      tooltip: 'Thông tin nhóm & Liên hệ (vothanhvang@gmail.com)',
+                      tooltip: 'Thông tin nhóm & Liên hệ (vothanhvang@gmail.com • 0973.993.494)',
                       icon: const Icon(Icons.contact_mail_outlined, color: Color(0xFF38BDF8), size: 20),
                       onPressed: _showContactDialog,
                     ),
                     IconButton(
                       tooltip: _darkMode ? 'Chế độ sáng' : 'Chế độ tối',
                       icon: Icon(_darkMode ? Icons.light_mode : Icons.dark_mode, size: 20),
-                      onPressed: () => setState(() => _darkMode = !_darkMode),
+                      onPressed: () {
+                        final next = !_darkMode;
+                        setState(() => _darkMode = next);
+                        widget.onThemeChanged?.call(next);
+                      },
                     ),
                     const SizedBox(width: 4),
                   ],
@@ -1194,6 +1206,12 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
   }
 
   void _showContactDialog() {
+    final titleColor = _darkMode ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A);
+    final bodyColor = _darkMode ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B);
+    final subColor = _darkMode ? const Color(0xFF94A3B8) : const Color(0xFF475569);
+    final accentBtn = _darkMode ? const Color(0xFF38BDF8) : const Color(0xFF0F3D6E);
+    final boxBg = _darkMode ? const Color(0xFF0A1426) : const Color(0xFFF1F5F9);
+
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1202,14 +1220,14 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
           borderRadius: BorderRadius.circular(12),
           side: const BorderSide(color: Color(0xFF06B6D4), width: 1.2),
         ),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.contact_mail, color: Color(0xFF38BDF8), size: 22),
-            SizedBox(width: 8),
+            const Icon(Icons.contact_mail, color: Color(0xFF38BDF8), size: 22),
+            const SizedBox(width: 8),
             Expanded(
               child: Text(
                 'Thông tin Phần mềm & Liên hệ',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: titleColor),
               ),
             ),
           ],
@@ -1223,40 +1241,79 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Color(0xFF38BDF8)),
             ),
             const SizedBox(height: 8),
-            const Text(
-                '• Đơn vị: Trường ĐH Bách Khoa – ĐHQG TP.HCM\n'
-                '• Học phần: Phân tích Phi tuyến Kết cấu\n'
-                '• Giảng viên hướng dẫn: PGS. TS Ngô Hữu Cường\n'
-                '• Học viên thực hiện:\n'
-                '    - Lâm Phúc Tâm (MSHV: 2670621)\n'
-                '    - Võ Thanh Vang (MSHV: 2670624)',
-                style: TextStyle(fontSize: 12, height: 1.5)),
+            Text(
+              '• Đơn vị: Trường ĐH Bách Khoa – ĐHQG TP.HCM\n'
+              '• Học phần: Phân tích Phi tuyến Kết cấu\n'
+              '• Giảng viên hướng dẫn: PGS. TS Ngô Hữu Cường\n'
+              '• Học viên thực hiện:\n'
+              '    - Lâm Phúc Tâm (MSHV: 2670621)\n'
+              '    - Võ Thanh Vang (MSHV: 2670624)',
+              style: TextStyle(fontSize: 12, height: 1.55, color: bodyColor),
+            ),
             const SizedBox(height: 10),
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
-                color: _darkMode ? const Color(0xFF0A1426) : const Color(0xFFF1F5F9),
+                color: boxBg,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFF06B6D4).withValues(alpha: 0.4)),
+                border: Border.all(color: const Color(0xFF06B6D4).withValues(alpha: 0.45)),
               ),
-              child: Row(
+              child: Column(
                 children: [
-                  const Icon(Icons.email_outlined, size: 18, color: Color(0xFF10B981)),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: SelectableText(
-                      'vothanhvang@gmail.com',
-                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
-                    ),
+                  Row(
+                    children: [
+                      const Icon(Icons.email_outlined, size: 18, color: Color(0xFF10B981)),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: SelectableText(
+                          'vothanhvang@gmail.com',
+                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                        ),
+                      ),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: accentBtn,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () {
+                          Clipboard.setData(const ClipboardData(text: 'vothanhvang@gmail.com'));
+                          Navigator.of(ctx).pop();
+                          _showSnack('Đã sao chép email liên hệ: vothanhvang@gmail.com', seconds: 2);
+                        },
+                        icon: const Icon(Icons.copy, size: 14),
+                        label: const Text('Sao chép', style: TextStyle(fontSize: 11)),
+                      ),
+                    ],
                   ),
-                  TextButton.icon(
-                    onPressed: () {
-                      Clipboard.setData(const ClipboardData(text: 'vothanhvang@gmail.com'));
-                      Navigator.of(ctx).pop();
-                      _showSnack('Đã sao chép email liên hệ: vothanhvang@gmail.com', seconds: 2);
-                    },
-                    icon: const Icon(Icons.copy, size: 14),
-                    label: const Text('Sao chép', style: TextStyle(fontSize: 11)),
+                  Divider(height: 12, color: const Color(0xFF06B6D4).withValues(alpha: 0.22)),
+                  Row(
+                    children: [
+                      const Icon(Icons.phone_outlined, size: 18, color: Color(0xFFFBBF24)),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: SelectableText(
+                          '0973.993.494',
+                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFFFBBF24)),
+                        ),
+                      ),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: accentBtn,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () {
+                          Clipboard.setData(const ClipboardData(text: '0973.993.494'));
+                          Navigator.of(ctx).pop();
+                          _showSnack('Đã sao chép số điện thoại: 0973.993.494', seconds: 2);
+                        },
+                        icon: const Icon(Icons.copy, size: 14),
+                        label: const Text('Sao chép', style: TextStyle(fontSize: 11)),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -1265,12 +1322,16 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
             SelectableText(
               '• Lõi tính toán: ${_resActive.engineSource}\n'
               '• GitHub: https://github.com/vothanhvang/PhanTichPhiTuyen_BaiTieuLuan4',
-              style: TextStyle(fontSize: 10.6, color: _darkMode ? const Color(0xFF94A3B8) : const Color(0xFF475569)),
+              style: TextStyle(fontSize: 10.6, color: subColor),
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Đóng')),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: accentBtn),
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Đóng', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
         ],
       ),
     );

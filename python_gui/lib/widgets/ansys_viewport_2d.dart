@@ -67,37 +67,54 @@ class _AnsysViewport2DState extends State<AnsysViewport2D> {
   }
 
   void _showControlsHelp(BuildContext context) {
+    final titleCol = widget.darkMode ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A);
+    final bodyCol = widget.darkMode ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B);
+    final btnCol = widget.darkMode ? const Color(0xFF38BDF8) : const Color(0xFF0F3D6E);
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Row(
+        backgroundColor: widget.darkMode ? const Color(0xFF0F172A) : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: Color(0xFF06B6D4), width: 1.1),
+        ),
+        title: Row(
           children: [
-            Icon(Icons.help_outline, color: Color(0xFF06B6D4), size: 20),
-            SizedBox(width: 8),
-            Text('Hướng dẫn thao tác khung 2D & Phím tắt', style: TextStyle(fontSize: 14)),
+            const Icon(Icons.help_outline, color: Color(0xFF06B6D4), size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Hướng dẫn thao tác khung 2D & Phím tắt',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: titleCol),
+              ),
+            ),
           ],
         ),
-        content: const Column(
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('• Chạm vào THANH: Đặt điểm khảo sát & cắt Phẫu thuật tại vị trí ξ', style: TextStyle(fontSize: 12.2)),
-            SizedBox(height: 4),
-            Text('• Chạm vào NÚT: Chọn nút & mở chi tiết Tab Liên kết', style: TextStyle(fontSize: 12.2)),
-            SizedBox(height: 4),
-            Text('• Kéo chuột / 1 ngón: Di chuyển khung nhìn (Pan)', style: TextStyle(fontSize: 12.2)),
-            SizedBox(height: 4),
-            Text('• Cuộn chuột / Chụm 2 ngón: Phóng to / Thu nhỏ (Zoom)', style: TextStyle(fontSize: 12.2)),
-            Divider(height: 16),
-            Text('Phím tắt nhanh:', style: TextStyle(fontSize: 12.2, fontWeight: FontWeight.bold)),
-            SizedBox(height: 4),
-            Text('• Space: Phát / Tạm dừng mô phỏng tăng tải', style: TextStyle(fontSize: 12)),
-            Text('• 2 / 3: Chuyển nhanh khung nhìn 2D ↔ 3D', style: TextStyle(fontSize: 12)),
-            Text('• Ctrl+Z / Ctrl+Y: Hoàn tác (Undo) / Làm lại (Redo)', style: TextStyle(fontSize: 12)),
+            Text('• Chạm vào THANH: Đặt điểm khảo sát & cắt Phẫu thuật tại vị trí ξ', style: TextStyle(fontSize: 12.2, color: bodyCol)),
+            const SizedBox(height: 4),
+            Text('• Chạm vào NÚT: Chọn nút & mở chi tiết Tab Liên kết', style: TextStyle(fontSize: 12.2, color: bodyCol)),
+            const SizedBox(height: 4),
+            Text('• Kéo chuột / 1 ngón: Di chuyển khung nhìn (Pan)', style: TextStyle(fontSize: 12.2, color: bodyCol)),
+            const SizedBox(height: 4),
+            Text('• Cuộn chuột / Chụm 2 ngón: Phóng to / Thu nhỏ (Zoom)', style: TextStyle(fontSize: 12.2, color: bodyCol)),
+            const Divider(height: 16),
+            const Text('Phím tắt nhanh:', style: TextStyle(fontSize: 12.2, fontWeight: FontWeight.bold, color: Color(0xFF38BDF8))),
+            const SizedBox(height: 4),
+            Text('• Space: Phát / Tạm dừng mô phỏng tăng tải', style: TextStyle(fontSize: 12, color: bodyCol)),
+            Text('• 2 / 3: Chuyển nhanh khung nhìn 2D ↔ 3D', style: TextStyle(fontSize: 12, color: bodyCol)),
+            Text('• Ctrl+Z / Ctrl+Y: Hoàn tác (Undo) / Làm lại (Redo)', style: TextStyle(fontSize: 12, color: bodyCol)),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Đóng')),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: btnCol),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Đóng', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
         ],
       ),
     );
