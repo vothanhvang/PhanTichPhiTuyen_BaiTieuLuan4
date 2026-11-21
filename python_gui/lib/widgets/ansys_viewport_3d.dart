@@ -34,6 +34,8 @@ class AnsysViewport3D extends StatefulWidget {
   final double probeXi;
   final bool surgicalMode;
   final bool darkMode;
+  final bool showColorBar;
+  final ValueChanged<bool>? onToggleColorBar;
   final ConnectionDisplayMode connectionMode;
   final ConnectionDetailType connectionType;
   final void Function(int elemIndex, double xi) onProbeChanged;
@@ -49,6 +51,8 @@ class AnsysViewport3D extends StatefulWidget {
     required this.probeXi,
     required this.surgicalMode,
     required this.darkMode,
+    this.showColorBar = true,
+    this.onToggleColorBar,
     this.connectionMode = ConnectionDisplayMode.schematic,
     this.connectionType = ConnectionDetailType.boltedGusset,
     required this.onProbeChanged,
@@ -253,17 +257,25 @@ class _AnsysViewport3DState extends State<AnsysViewport3D> {
               ),
             ),
 
-            // Thang màu ANSYS góc trên trái
+            // Bảng thang màu góc trên trái (có nút ẩn / hiện để không che khung 3D)
             Positioned(
               left: 12,
               top: 12,
-              child: AnsysColorBar(
-                title: widget.field.label,
-                unit: widget.field.unit,
-                minVal: minV,
-                maxVal: maxV,
-                darkMode: widget.darkMode,
-              ),
+              child: widget.showColorBar
+                  ? AnsysColorBar(
+                      title: widget.field.label,
+                      unit: widget.field.unit,
+                      minVal: minV,
+                      maxVal: maxV,
+                      darkMode: widget.darkMode,
+                      onHide: widget.onToggleColorBar != null
+                          ? () => widget.onToggleColorBar!(false)
+                          : null,
+                    )
+                  : ColorBarRestoreButton(
+                      darkMode: widget.darkMode,
+                      onShow: () => widget.onToggleColorBar?.call(true),
+                    ),
             ),
 
             // Thanh điều khiển góc nhìn 3D chuẩn ANSYS góc trên phải

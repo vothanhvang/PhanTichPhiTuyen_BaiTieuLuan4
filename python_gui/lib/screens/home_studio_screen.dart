@@ -60,6 +60,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
   // Trạng thái hiển thị 2D/3D & Phẫu thuật
   bool _is3D = true;
   bool _surgicalMode = true;
+  bool _showColorBar = true;
   bool _darkMode = true;
   double _deformScale = 180.0;
   double _playbackFrac = 1.0;
@@ -556,6 +557,25 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                   if (v) _rightTab = 1;
                 }),
               ),
+              FilterChip(
+                avatar: Icon(
+                  _showColorBar ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                  size: 15,
+                  color: _showColorBar ? Colors.black : const Color(0xFF38BDF8),
+                ),
+                label: Text(
+                  'Thang màu',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: _showColorBar ? Colors.black : null,
+                  ),
+                ),
+                tooltip: _showColorBar ? 'Ẩn bảng thang màu góc trái' : 'Hiện bảng thang màu góc trái',
+                selected: _showColorBar,
+                selectedColor: const Color(0xFF38BDF8),
+                onSelected: (v) => setState(() => _showColorBar = v),
+              ),
               DropdownButton<ContourField>(
                 value: _contourField,
                 isDense: true,
@@ -647,6 +667,8 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                   probeXi: _probeXi,
                   surgicalMode: _surgicalMode,
                   darkMode: _darkMode,
+                  showColorBar: _showColorBar,
+                  onToggleColorBar: (v) => setState(() => _showColorBar = v),
                   connectionMode: _connectionMode,
                   connectionType: _connParams.detailType,
                   onProbeChanged: (e, xi) => setState(() {
@@ -664,6 +686,8 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                   probeXi: _probeXi,
                   surgicalMode: _surgicalMode,
                   darkMode: _darkMode,
+                  showColorBar: _showColorBar,
+                  onToggleColorBar: (v) => setState(() => _showColorBar = v),
                   connectionMode: _connectionMode,
                   connectionType: _connParams.detailType,
                   onProbeChanged: (e, xi) => setState(() {

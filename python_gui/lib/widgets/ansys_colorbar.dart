@@ -21,13 +21,14 @@ Color ansysRainbowColor(double t) {
   return Color.lerp(stops[idx], stops[idx + 1], frac)!;
 }
 
-/// Thang màu đứng kiểu ANSYS nổi bên trái/phải màn hình mô phỏng
+/// Thang màu đứng chú giải trường kết quả nổi bên góc màn hình mô phỏng
 class AnsysColorBar extends StatelessWidget {
   final String title;
   final String unit;
   final double minVal;
   final double maxVal;
   final bool darkMode;
+  final VoidCallback? onHide;
 
   const AnsysColorBar({
     super.key,
@@ -36,6 +37,7 @@ class AnsysColorBar extends StatelessWidget {
     required this.minVal,
     required this.maxVal,
     this.darkMode = true,
+    this.onHide,
   });
 
   @override
@@ -49,7 +51,7 @@ class AnsysColorBar extends StatelessWidget {
     final ticks = List.generate(5, (i) => maxVal - span * i / 4.0);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(10),
@@ -59,13 +61,36 @@ class AnsysColorBar extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: const Color(0xFF38BDF8),
-              fontSize: 10.5,
-              fontWeight: FontWeight.bold,
-            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Color(0xFF38BDF8),
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              if (onHide != null) ...[
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: 'Ẩn thang màu để nhìn thoáng mô hình 2D/3D',
+                  child: InkWell(
+                    onTap: onHide,
+                    borderRadius: BorderRadius.circular(5),
+                    child: Padding(
+                      padding: const EdgeInsets.all(2),
+                      child: Icon(
+                        Icons.visibility_off_outlined,
+                        size: 14,
+                        color: textColor.withValues(alpha: 0.72),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
           Text(
             'Đơn vị: $unit',
@@ -117,6 +142,70 @@ class AnsysColorBar extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Nút siêu gọn ở góc trên trái để mở lại bảng thang màu khi đang ẩn
+class ColorBarRestoreButton extends StatelessWidget {
+  final bool darkMode;
+  final VoidCallback onShow;
+
+  const ColorBarRestoreButton({
+    super.key,
+    required this.darkMode,
+    required this.onShow,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = darkMode ? const Color(0xB30F172A) : const Color(0xD9FFFFFF);
+    final border = darkMode ? const Color(0xFF334155) : const Color(0xFFCBD5E1);
+    return Tooltip(
+      message: 'Hiện bảng thang màu chú giải',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onShow,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: border),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 6,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(2),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0xFFFF1744),
+                        Color(0xFFFFEA00),
+                        Color(0xFF00E676),
+                        Color(0xFF0026FF),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 5),
+                Icon(
+                  Icons.visibility_outlined,
+                  size: 14,
+                  color: darkMode ? const Color(0xFF38BDF8) : const Color(0xFF0F3D6E),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
