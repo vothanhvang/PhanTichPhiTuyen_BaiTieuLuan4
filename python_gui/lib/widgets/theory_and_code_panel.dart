@@ -362,7 +362,7 @@ def bar2g_corotational(ex0, ey0, ep, ed):
                     SizedBox(width: 7),
                     Expanded(
                       child: SelectableText(
-                        'Liên hệ: vothanhvang@gmail.com',
+                        'Email: vothanhvang@gmail.com',
                         style: TextStyle(fontSize: 11.2, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
                       ),
                     ),

@@ -735,7 +735,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                             ),
                             const SizedBox(height: 1),
                             Text(
-                              'ĐH Bách Khoa TP.HCM • GVHD: PGS. TS Ngô Hữu Cường • HV: Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624) • Liên hệ: vothanhvang@gmail.com',
+                              'ĐH Bách Khoa TP.HCM • GVHD: PGS. TS Ngô Hữu Cường • HV: Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624) • Email: vothanhvang@gmail.com',
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 9.7,

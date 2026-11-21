@@ -699,16 +699,26 @@ class ConnectionDrawingExporter {
                   color: PdfColor.fromHex('#EFF6FF'),
                   border: pw.Border.all(color: navy, width: 0.9),
                 ),
-                child: pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                   children: [
-                    pw.Text(
-                      'TRƯỜNG ĐH BÁCH KHOA – ĐHQG TP.HCM  |  GVHD: PGS. TS Ngô Hữu Cường',
-                      style: pw.TextStyle(fontSize: 7.8, fontWeight: pw.FontWeight.bold, color: navy),
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text(
+                          'TRƯỜNG ĐH BÁCH KHOA – ĐHQG TP.HCM  |  GVHD: PGS. TS Ngô Hữu Cường',
+                          style: pw.TextStyle(fontSize: 7.6, fontWeight: pw.FontWeight.bold, color: navy),
+                        ),
+                        pw.Text(
+                          'HV: Lâm Phúc Tâm (2670621) – Võ Thanh Vang (2670624)  |  vothanhvang@gmail.com  •  0973.993.494',
+                          style: pw.TextStyle(fontSize: 7.4, color: slate),
+                        ),
+                      ],
                     ),
+                    pw.SizedBox(height: 2),
                     pw.Text(
-                      'HV: Lâm Phúc Tâm (2670621) – Võ Thanh Vang (2670624)  |  vothanhvang@gmail.com  •  0973.993.494',
-                      style: pw.TextStyle(fontSize: 7.6, color: slate),
+                      'Căn cứ thiết kế & chế tạo: TCVN 5575:2012/2024 • EN 1993-1-8:2005 (Bảng 3.4, §3.10.2, §3.13, §4.5.3, §6.2.5) • Whitmore (1952) • EN 1337-3/4',
+                      style: pw.TextStyle(fontSize: 6.7, fontStyle: pw.FontStyle.italic, color: slate),
                     ),
                   ],
                 ),
