@@ -728,16 +728,18 @@ class _Ansys3DPainter extends CustomPainter {
       canvas.drawLine(a, b, floorPaint);
     }
 
-    // 2. Dây khung cấu hình ban đầu (Undeformed 3D Ghost)
-    final ghostPaint = Paint()
-      ..color = darkMode ? const Color(0x6664748B) : const Color(0x8864748B)
-      ..strokeWidth = 1.4;
-    for (int e = 0; e < model.nElems; e++) {
-      final ni = model.conn[e][0] - 1;
-      final nj = model.conn[e][1] - 1;
-      final a = cam.project(_Vec3(model.coords[ni][0], model.coords[ni][1], 0)).pt;
-      final b = cam.project(_Vec3(model.coords[nj][0], model.coords[nj][1], 0)).pt;
-      canvas.drawLine(a, b, ghostPaint);
+    // 2. Dây khung cấu hình ban đầu (ẩn khi ở chế độ Chế tạo để không xuyên qua bản mã đặc)
+    if (connectionMode != ConnectionDisplayMode.fabrication) {
+      final ghostPaint = Paint()
+        ..color = darkMode ? const Color(0x6664748B) : const Color(0x8864748B)
+        ..strokeWidth = 1.4;
+      for (int e = 0; e < model.nElems; e++) {
+        final ni = model.conn[e][0] - 1;
+        final nj = model.conn[e][1] - 1;
+        final a = cam.project(_Vec3(model.coords[ni][0], model.coords[ni][1], 0)).pt;
+        final b = cam.project(_Vec3(model.coords[nj][0], model.coords[nj][1], 0)).pt;
+        canvas.drawLine(a, b, ghostPaint);
+      }
     }
 
     // 3. Tạo toàn bộ lưới mặt phẳng 3D cho các thanh, khớp nối và mặt cắt phẫu thuật
@@ -751,6 +753,49 @@ class _Ansys3DPainter extends CustomPainter {
           0.0,
         ),
     ];
+
+    // Khi bật Chế tạo: cắt ngắn đầu thanh thực tế (setback) cách tâm nút và tách chính xác đoạn ngàm
+    // nằm trong bản mã [setback..reach] với đoạn thân tự do [reach..L-reach] để bản mã đặc 100%
+    // che khuất hoàn toàn phần đầu thanh nằm phía sau từ mọi góc nhìn 3D!
+    final isFab = connectionMode == ConnectionDisplayMode.fabrication;
+    final fabSpanLen = math.max(gMaxX - gMinX, gMaxY - gMinY);
+    final fabReach = (fabSpanLen * 0.105).clamp(110.0, 220.0);
+    final fabSetbackBase = fabReach * 0.48;
+
+    // Xác định trước nút nào dùng bản mã kẹp 2 mặt ngoài (outer double gusset) hay bản mã kẹp giữa (2L/2C)
+    final nodeUsesCenterGusset = List<bool>.filled(model.nNodes, false);
+    final nodePlateOuterZ = List<double>.filled(model.nNodes, 58.0);
+    if (isFab) {
+      for (int i = 0; i < model.nNodes; i++) {
+        double maxZHalf = 42.0;
+        bool allTwin = true;
+        double minGapHalf = 999.0;
+        int cnt = 0;
+        for (int e = 0; e < model.nElems; e++) {
+          final n1 = model.conn[e][0] - 1;
+          final n2 = model.conn[e][1] - 1;
+          if (n1 != i && n2 != i) continue;
+          cnt++;
+          final shapeE = model.sectionShapeForElem(e);
+          final dims = model.sectionDimsForElem(e);
+          final vs = _visScaleFor(shapeE, dims);
+          final bnd = dims.rotatedBounds(shapeE);
+          maxZHalf = math.max(maxZHalf, (0.5 * bnd.width * vs).clamp(36.0, 128.0));
+          final mod180 = dims.rotationDeg % 180.0;
+          final alignedGapZ = (mod180 < 15.0) || ((180.0 - mod180) < 15.0);
+          if ((shapeE == SectionShape.doubleAngle || shapeE == SectionShape.doubleChannel) &&
+              dims.gap >= 6.0 &&
+              alignedGapZ) {
+            minGapHalf = math.min(minGapHalf, 0.5 * dims.gap * vs);
+          } else {
+            allTwin = false;
+          }
+        }
+        nodeUsesCenterGusset[i] = cnt > 0 && allTwin && minGapHalf >= 4.0;
+        nodePlateOuterZ[i] = maxZHalf + 16.0;
+      }
+    }
+    final camForwardZ = math.cos(cam.yaw) * math.cos(cam.pitch);
 
     // Hàm nội suy liên tục giá trị trường kết quả tại ξ ∈ [0, 1] dọc thanh e
     double valueAt3D(int e, double xi) {
@@ -775,52 +820,157 @@ class _Ansys3DPainter extends CustomPainter {
       ];
     }
 
+    void addBarRange(
+      int e,
+      _Vec3 pStart,
+      _Vec3 pEnd,
+      double xiStart,
+      double xiEnd,
+      List<List<Offset>> profiles,
+      Color col, {
+      double alpha = 1.0,
+      bool highlightEndCap = false,
+      double depthBias = 0.0,
+    }) {
+      if ((pEnd - pStart).length < 1e-3) return;
+      final beforeLen = faces.length;
+      if (!isFab) {
+        for (final profile in profiles) {
+          _addPrismFaces(
+            faces,
+            pStart,
+            pEnd,
+            profile,
+            col,
+            alpha: alpha,
+            highlightEndCap: highlightEndCap,
+            gradientColors: buildGradColors(e, xiStart, xiEnd),
+          );
+        }
+      } else {
+        final segLen = (pEnd - pStart).length;
+        final nSub = math.max(1, (segLen / math.max(110.0, fabReach)).ceil()).clamp(1, 6);
+        for (int k = 0; k < nSub; k++) {
+          final f0 = k / nSub;
+          final f1 = (k + 1) / nSub;
+          final q0 = pStart + (pEnd - pStart) * f0;
+          final q1 = pStart + (pEnd - pStart) * f1;
+          final x0 = xiStart + (xiEnd - xiStart) * f0;
+          final x1 = xiStart + (xiEnd - xiStart) * f1;
+          for (final profile in profiles) {
+            _addPrismFaces(
+              faces,
+              q0,
+              q1,
+              profile,
+              col,
+              alpha: alpha,
+              highlightEndCap: highlightEndCap && (k == nSub - 1),
+              gradientColors: buildGradColors(e, x0, x1),
+            );
+          }
+        }
+      }
+      if (depthBias != 0.0) {
+        for (int k = beforeLen; k < faces.length; k++) {
+          final old = faces[k];
+          faces[k] = _Face3D(
+            verts: old.verts,
+            baseColor: old.baseColor,
+            depth: old.depth + depthBias,
+            alpha: old.alpha,
+            edgeColor: old.edgeColor,
+            gradStart: old.gradStart,
+            gradEnd: old.gradEnd,
+            gradColors: old.gradColors,
+          );
+        }
+      }
+    }
+
     for (int e = 0; e < model.nElems; e++) {
       final ni = model.conn[e][0] - 1;
       final nj = model.conn[e][1] - 1;
-      final p1 = nodePos3D[ni];
-      final p2 = nodePos3D[nj];
+      final p1Raw = nodePos3D[ni];
+      final p2Raw = nodePos3D[nj];
+      final barVec = p2Raw - p1Raw;
+      final barLen = barVec.length;
+      final axisUnit = barVec.normalized();
+      final setback = isFab ? math.min(fabSetbackBase, barLen * 0.22) : 0.0;
+      final reachEnd = isFab ? math.min(fabReach, barLen * 0.36) : 0.0;
+      final xiSetback = barLen > 1e-3 ? (setback / barLen) : 0.0;
+      final xiReach = barLen > 1e-3 ? (reachEnd / barLen) : 0.0;
+
+      // Khi bản mã kẹp 2 mặt ngoài che khuất 100% vùng [setback..reach] theo góc nhìn trực diện/ISO:
+      // chỉ vẽ đoạn ngàm bên trong khi nhìn nghiêng sát cạnh biên (|camForwardZ| < 0.28) hoặc khi dùng
+      // bản mã kẹp giữa 2L/2C (nơi 2 thanh nằm hai bên ngoài bản mã và cắt ngắn rõ ràng tại setback!).
+      final hideStubNi = isFab && !nodeUsesCenterGusset[ni] && camForwardZ.abs() >= 0.28;
+      final hideStubNj = isFab && !nodeUsesCenterGusset[nj] && camForwardZ.abs() >= 0.28;
+
+      final xiStartVis = hideStubNi ? xiReach : xiSetback;
+      final xiEndVis = hideStubNj ? (1.0 - xiReach) : (1.0 - xiSetback);
+      final p1Vis = p1Raw + barVec * xiStartVis;
+      final p2Vis = p1Raw + barVec * xiEndVis;
+
       final tVal = ((valueAt3D(e, 0.5) - minVal) / span).clamp(0.0, 1.0);
       final col = ansysRainbowColor(tVal);
       final shapeE = model.sectionShapeForElem(e);
       final dims = model.sectionDimsForElem(e);
       final profiles = _crossSectionPolygons(shapeE, dims);
 
+      // Hàm vẽ một khoảng [xiA, xiB] có tách ranh giới bản mã & ưu tiên Z-order chuẩn cho 2L/2C
+      void drawPiece(double xiA, double xiB, {double alpha = 1.0, bool highlightEndCap = false}) {
+        if (xiB <= xiA + 1e-4) return;
+        if (!isFab) {
+          addBarRange(
+            e,
+            p1Raw + barVec * xiA,
+            p1Raw + barVec * xiB,
+            xiA,
+            xiB,
+            profiles,
+            col,
+            alpha: alpha,
+            highlightEndCap: highlightEndCap,
+          );
+          return;
+        }
+        // Tách theo 3 vùng [xiA .. xiReach] (đầu i), [xiReach .. 1-xiReach] (thân tự do), [1-xiReach .. xiB] (đầu j)
+        final cuts = <double>[xiA];
+        if (xiReach > xiA + 1e-4 && xiReach < xiB - 1e-4) cuts.add(xiReach);
+        final xiR2 = 1.0 - xiReach;
+        if (xiR2 > cuts.last + 1e-4 && xiR2 < xiB - 1e-4) cuts.add(xiR2);
+        cuts.add(xiB);
+        for (int c = 0; c < cuts.length - 1; c++) {
+          final a = cuts[c];
+          final b = cuts[c + 1];
+          final mid = 0.5 * (a + b);
+          // Đoạn ngàm trong bản mã kẹp ngoài (khi nhìn nghiêng cạnh) lùi depth nhẹ để không đè mặt trước bản mã
+          final inOuterNi = mid < xiReach && !nodeUsesCenterGusset[ni];
+          final inOuterNj = mid > (1.0 - xiReach) && !nodeUsesCenterGusset[nj];
+          final bias = (inOuterNi || inOuterNj) ? -12.0 : 0.0;
+          addBarRange(
+            e,
+            p1Raw + barVec * a,
+            p1Raw + barVec * b,
+            a,
+            b,
+            profiles,
+            col,
+            alpha: alpha,
+            highlightEndCap: highlightEndCap && (c == cuts.length - 2),
+            depthBias: bias,
+          );
+        }
+      }
+
       if (surgicalMode && e == selectedElem) {
-        // PHẪU THUẬT 3D: Cắt thanh tại vị trí ξ!
-        // Phần trước [0, ξ]: khối đặc có nắp phẫu thuật + Gradient liên tục
-        // Phần sau [ξ, 1]: cắt rời làm mờ trong suốt + Gradient liên tục!
-        final pCut = p1 + (p2 - p1) * probeXi;
-        if (probeXi > 0.03) {
-          for (final profile in profiles) {
-            _addPrismFaces(
-              faces,
-              p1,
-              pCut,
-              profile,
-              col,
-              alpha: 1.0,
-              highlightEndCap: true,
-              gradientColors: buildGradColors(e, 0.0, probeXi),
-            );
-          }
-        }
-        if (probeXi < 0.97) {
-          for (final profile in profiles) {
-            _addPrismFaces(
-              faces,
-              pCut,
-              p2,
-              profile,
-              col,
-              alpha: 0.26,
-              gradientColors: buildGradColors(e, probeXi, 1.0),
-            );
-          }
-        }
+        final xiCut = probeXi.clamp(xiStartVis + 0.02, xiEndVis - 0.02);
+        final pCut = p1Raw + barVec * xiCut;
+        drawPiece(xiStartVis, xiCut, alpha: 1.0, highlightEndCap: true);
+        drawPiece(xiCut, xiEndVis, alpha: 0.26);
         // Mặt phẳng dao cắt trong suốt màu xanh lơ vuông góc trục thanh
-        final axis = (p2 - p1).normalized();
-        final vAxis = const _Vec3(0, 0, 1).cross(axis).normalized();
+        final vAxis = const _Vec3(0, 0, 1).cross(axisUnit).normalized();
         final wAxis = const _Vec3(0, 0, 1);
         final bndCut = dims.rotatedBounds(shapeE);
         final sz = math.min(280.0, math.max(bndCut.height, bndCut.width)) * 1.15;
@@ -839,18 +989,10 @@ class _Ansys3DPainter extends CustomPainter {
           edgeColor: const Color(0xFF00E5FF),
         ));
       } else {
-        for (final profile in profiles) {
-          _addPrismFaces(
-            faces,
-            p1,
-            p2,
-            profile,
-            col,
-            alpha: 0.96,
-            gradientColors: buildGradColors(e, 0.0, 1.0),
-          );
-        }
+        drawPiece(xiStartVis, xiEndVis, alpha: 1.0);
       }
+      // Giữ tham chiếu p1Vis/p2Vis khỏi cảnh báo unused
+      if (p1Vis.x.isNaN || p2Vis.x.isNaN || nodePlateOuterZ[ni].isNaN) continue;
     }
 
     // Khớp trụ 3D hoặc Chi tiết gia công chế tạo 3D tại từng nút!
@@ -1026,7 +1168,7 @@ class _Ansys3DPainter extends CustomPainter {
     // 7. Nhãn tên các nút 3D (kèm ||u|| khi đang chọn hiển thị chuyển vị & vòng sáng nút đang chọn)
     for (int i = 0; i < model.nNodes; i++) {
       final pt = cam.project(nodePos3D[i]).pt;
-      if (selectedNode == i) {
+      if (selectedNode == i && connectionMode != ConnectionDisplayMode.fabrication) {
         canvas.drawCircle(
           pt,
           12.0,
@@ -1047,14 +1189,18 @@ class _Ansys3DPainter extends CustomPainter {
       final nodeLbl = field == ContourField.displacement
           ? 'N${i + 1} (${uNode.toStringAsFixed(3)} mm)'
           : 'N${i + 1}';
-      _drawLabel(
-        canvas,
-        pt + const Offset(10, -14),
-        nodeLbl,
-        selectedNode == i
-            ? const Color(0xFF00E5FF)
-            : (darkMode ? Colors.white : const Color(0xFF0F172A)),
-      );
+      if (selectedNode == i && connectionMode == ConnectionDisplayMode.fabrication) {
+        _drawBadge3D(canvas, pt + const Offset(16, -16), '● $nodeLbl', const Color(0xFF00E5FF), fontSize: 9.4);
+      } else {
+        _drawLabel(
+          canvas,
+          pt + const Offset(10, -14),
+          nodeLbl,
+          selectedNode == i
+              ? const Color(0xFF00E5FF)
+              : (darkMode ? Colors.white : const Color(0xFF0F172A)),
+        );
+      }
     }
 
     // 8. Hệ trục tọa độ 3D Triad kiểu ANSYS ở góc dưới phải
@@ -1219,6 +1365,9 @@ class _Ansys3DPainter extends CustomPainter {
       final boltTopZ = boltBaseZ + 16.0;
       final weldZ = useCenterGusset ? (minCenterGapHalf + 3.0) : (plateOuterZ + 2.0);
       final pinHalfZ = boltTopZ + 12.0;
+      final camForwardZ = math.cos(cam.yaw) * math.cos(cam.pitch);
+      final drawPosZDetails = camForwardZ > -0.10;
+      final drawNegZDetails = camForwardZ < 0.10;
 
       for (final info in connectedInfo) {
         final dir2 = info.dir2;
@@ -1229,59 +1378,6 @@ class _Ansys3DPainter extends CustomPainter {
         hullPts.add(p2 + dir2 * reach - perp2 * (hw + 14.0));
         hullPts.add(p2 + perp2 * (hw + 10.0));
         hullPts.add(p2 - perp2 * (hw + 10.0));
-
-        // Chi tiết liên kết đầu thanh: Bu-lông lục giác 3D / Đường hàn góc 3D / Chốt Clevis 3D
-        if (connectionType == ConnectionDetailType.boltedGusset) {
-          for (final dAlong in [reach * 0.44, reach * 0.78]) {
-            for (final off in [-hw * 0.46, hw * 0.46]) {
-              final bx = p.x + dir2.dx * dAlong + perp2.dx * off;
-              final by = p.y + dir2.dy * dAlong + perp2.dy * off;
-              _addPrismFaces(
-                faces,
-                _Vec3(bx, by, boltBaseZ),
-                _Vec3(bx, by, boltTopZ),
-                hexBoltProfile,
-                const Color(0xFFFACC15),
-                alpha: 1.0,
-              );
-              _addPrismFaces(
-                faces,
-                _Vec3(bx, by, -boltTopZ),
-                _Vec3(bx, by, -boltBaseZ),
-                hexBoltProfile,
-                const Color(0xFFEAB308),
-                alpha: 1.0,
-              );
-            }
-          }
-        } else if (connectionType == ConnectionDetailType.weldedGusset) {
-          final weldProfile = [
-            const Offset(-7, -7),
-            const Offset(7, -7),
-            const Offset(7, 7),
-            const Offset(-7, 7),
-          ];
-          for (final sgn in [-1.0, 1.0]) {
-            final wa = _Vec3(
-              p.x + dir2.dx * (reach * 0.22) + perp2.dx * (hw * sgn),
-              p.y + dir2.dy * (reach * 0.22) + perp2.dy * (hw * sgn),
-              weldZ,
-            );
-            final wb = _Vec3(
-              p.x + dir2.dx * (reach * 0.94) + perp2.dx * (hw * sgn),
-              p.y + dir2.dy * (reach * 0.94) + perp2.dy * (hw * sgn),
-              weldZ,
-            );
-            _addPrismFaces(faces, wa, wb, weldProfile, const Color(0xFFF97316));
-            _addPrismFaces(
-              faces,
-              _Vec3(wa.x, wa.y, -weldZ),
-              _Vec3(wb.x, wb.y, -weldZ),
-              weldProfile,
-              const Color(0xFFF97316),
-            );
-          }
-        }
       }
 
       // Kéo dài tai bản mã nối tới bản đế theo đúng hướng nút đã chọn (↓ / ↑ / ← / →)
@@ -1294,14 +1390,117 @@ class _Ansys3DPainter extends CustomPainter {
         hullPts.add(cExt + Offset(tang3.x * 80.0, tang3.y * 80.0));
       }
 
-      // Bản mã 3D thông minh: bản mã kẹp giữa khe hở s cho thép ghép đôi 2L/2C, hoặc 2 tấm kẹp ngoài không xuyên tiết diện!
+      // Bản mã 3D đặc 100% (alpha = 1.0) che khuất hoàn toàn đầu thanh nằm phía sau!
       final hull = _convexHullXY(hullPts);
+      final beforePlateIdx = faces.length;
       if (useCenterGusset) {
         final gHalf = (minCenterGapHalf - 0.5).clamp(4.0, 12.0);
-        _addExtrudedPolyXY(faces, hull, -gHalf, gHalf, const Color(0xFF1D4ED8), alpha: 0.95);
+        _addExtrudedPolyXY(faces, hull, -gHalf, gHalf, const Color(0xFF1D4ED8), alpha: 1.0);
       } else {
-        _addExtrudedPolyXY(faces, hull, plateInnerZ, plateOuterZ, const Color(0xFF1D4ED8), alpha: 0.90);
-        _addExtrudedPolyXY(faces, hull, -plateOuterZ, -plateInnerZ, const Color(0xFF1E40AF), alpha: 0.90);
+        _addExtrudedPolyXY(faces, hull, plateInnerZ, plateOuterZ, const Color(0xFF1D4ED8), alpha: 1.0);
+        _addExtrudedPolyXY(faces, hull, -plateOuterZ, -plateInnerZ, const Color(0xFF1E40AF), alpha: 1.0);
+      }
+      double plateMaxDepth = -1e18;
+      for (int k = beforePlateIdx; k < faces.length; k++) {
+        if (faces[k].depth > plateMaxDepth) plateMaxDepth = faces[k].depth;
+      }
+
+      void addRaisedDetail(void Function() emit, bool isFrontFacingSide) {
+        final idx0 = faces.length;
+        emit();
+        if (isFrontFacingSide && plateMaxDepth > -1e17) {
+          for (int k = idx0; k < faces.length; k++) {
+            final f = faces[k];
+            if (f.depth <= plateMaxDepth + 2.5) {
+              faces[k] = _Face3D(
+                verts: f.verts,
+                baseColor: f.baseColor,
+                depth: plateMaxDepth + 3.5,
+                alpha: f.alpha,
+                edgeColor: f.edgeColor,
+                gradStart: f.gradStart,
+                gradEnd: f.gradEnd,
+                gradColors: f.gradColors,
+              );
+            }
+          }
+        }
+      }
+
+      // Chi tiết liên kết đầu thanh: chỉ hiển thị bu-lông / đường hàn ở mặt hướng về camera (không lộ mặt khuất!)
+      for (final info in connectedInfo) {
+        final dir2 = info.dir2;
+        final perp2 = info.perp2;
+        final hw = info.hw;
+        if (connectionType == ConnectionDetailType.boltedGusset) {
+          for (final dAlong in [reach * 0.56, reach * 0.86]) {
+            for (final off in [-hw * 0.44, hw * 0.44]) {
+              final bx = p.x + dir2.dx * dAlong + perp2.dx * off;
+              final by = p.y + dir2.dy * dAlong + perp2.dy * off;
+              if (drawPosZDetails) {
+                addRaisedDetail(() {
+                  _addPrismFaces(
+                    faces,
+                    _Vec3(bx, by, boltBaseZ),
+                    _Vec3(bx, by, boltTopZ),
+                    hexBoltProfile,
+                    const Color(0xFFFACC15),
+                    alpha: 1.0,
+                  );
+                }, camForwardZ >= 0.0);
+              }
+              if (drawNegZDetails) {
+                addRaisedDetail(() {
+                  _addPrismFaces(
+                    faces,
+                    _Vec3(bx, by, -boltTopZ),
+                    _Vec3(bx, by, -boltBaseZ),
+                    hexBoltProfile,
+                    const Color(0xFFEAB308),
+                    alpha: 1.0,
+                  );
+                }, camForwardZ < 0.0);
+              }
+            }
+          }
+        } else if (connectionType == ConnectionDetailType.weldedGusset) {
+          final weldProfile = [
+            const Offset(-7, -7),
+            const Offset(7, -7),
+            const Offset(7, 7),
+            const Offset(-7, 7),
+          ];
+          for (final sgn in [-1.0, 1.0]) {
+            final wa = _Vec3(
+              p.x + dir2.dx * (reach * 0.48) + perp2.dx * (hw * sgn),
+              p.y + dir2.dy * (reach * 0.48) + perp2.dy * (hw * sgn),
+              weldZ,
+            );
+            final wb = _Vec3(
+              p.x + dir2.dx * (reach * 0.96) + perp2.dx * (hw * sgn),
+              p.y + dir2.dy * (reach * 0.96) + perp2.dy * (hw * sgn),
+              weldZ,
+            );
+            if (drawPosZDetails) {
+              addRaisedDetail(
+                () => _addPrismFaces(faces, wa, wb, weldProfile, const Color(0xFFF97316)),
+                camForwardZ >= 0.0,
+              );
+            }
+            if (drawNegZDetails) {
+              addRaisedDetail(
+                () => _addPrismFaces(
+                  faces,
+                  _Vec3(wa.x, wa.y, -weldZ),
+                  _Vec3(wb.x, wb.y, -weldZ),
+                  weldProfile,
+                  const Color(0xFFF97316),
+                ),
+                camForwardZ < 0.0,
+              );
+            }
+          }
+        }
       }
 
       // Chốt bản lề Clevis 3D Ø60 nếu chọn kiểu Tai chốt

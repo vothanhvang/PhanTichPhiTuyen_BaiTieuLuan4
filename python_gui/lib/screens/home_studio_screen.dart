@@ -18,7 +18,10 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import '../core/calfem_engine.dart';
 import '../core/connection_calculator.dart';
+import '../core/connection_drawing_exporter.dart';
 import '../core/project_serializer.dart';
+import '../core/rc_beam_engine.dart';
+import '../core/rc_beam_report_generator.dart';
 import '../core/report_generator.dart';
 import '../core/python_bridge_stub.dart'
     if (dart.library.io) '../core/python_bridge_io.dart';
@@ -28,6 +31,9 @@ import '../widgets/surgical_dissection_panel.dart';
 import '../widgets/connection_detail_panel.dart';
 import '../widgets/charts_and_tables_panel.dart';
 import '../widgets/theory_and_code_panel.dart';
+import '../widgets/rc_beam_viewport_2d.dart';
+import '../widgets/rc_beam_viewport_3d.dart';
+import '../widgets/rc_beam_panels.dart';
 
 class HomeStudioScreen extends StatefulWidget {
   final bool initialDarkMode;
@@ -128,12 +134,53 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
   bool _pythonOnline = false;
   bool _exporting = false;
 
+  // Chế độ Dầm Bê tông Cốt thép Phi tuyến Vật liệu (Phương pháp Thớ — Mục 1)
+  bool _isRcBeamMode = false;
+  RcBeamConfig _rcConfig = const RcBeamConfig();
+  RcBeamContourField _rcField = RcBeamContourField.bendingMoment;
+  double _rcProbeXNorm = 0.50;
+  double _rcDeformScale = 35.0;
+  RcBeamAnalysisResult? _rcLinear;
+  RcBeamAnalysisResult? _rcActive;
+  List<RcLoadDeflectionPoint> _rcPushover = const [];
+  List<RcMomentCurvaturePoint> _rcMomentCurv = const [];
+  List<RcMeshConvergencePoint> _rcMeshConv = const [];
+
   @override
   void initState() {
     super.initState();
     _darkMode = widget.initialDarkMode;
     _recomputeLocal();
     _initPythonBridge();
+  }
+
+  void _recomputeRcBeam({bool computeCurves = true}) {
+    _rcLinear = RcBeamFiberEngine.solve(_rcConfig, method: SolverMethod.linearFirstOrder, forceNonlinear: false);
+    _rcActive = RcBeamFiberEngine.solve(_rcConfig, method: _method);
+    if (computeCurves) {
+      _rcPushover = RcBeamFiberEngine.tracePushoverCurve(_rcConfig);
+      _rcMomentCurv = RcBeamFiberEngine.computeMomentCurvature(_rcConfig);
+      _rcMeshConv = RcBeamFiberEngine.runMeshConvergenceStudy(_rcConfig);
+    }
+  }
+
+  void _setRcBeamMode(bool enable) {
+    if (_isRcBeamMode == enable) return;
+    _animTimer?.cancel();
+    _animTimer = null;
+    setState(() {
+      _isRcBeamMode = enable;
+      if (enable && _rcActive == null) {
+        _recomputeRcBeam(computeCurves: true);
+      }
+    });
+  }
+
+  void _updateRcBeam(RcBeamConfig Function(RcBeamConfig c) mutate, {bool computeCurves = true}) {
+    setState(() {
+      _rcConfig = mutate(_rcConfig);
+      _recomputeRcBeam(computeCurves: computeCurves);
+    });
   }
 
   @override
@@ -404,6 +451,32 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
     setState(() => _exporting = true);
     try {
       final shot = await _captureViewportPng();
+      if (_isRcBeamMode) {
+        if (_rcActive == null || _rcLinear == null) _recomputeRcBeam(computeCurves: true);
+        final savedPath = asPdf
+            ? await RcBeamReportGenerator.exportPdf(
+                linear: _rcLinear!,
+                active: _rcActive!,
+                meshConv: _rcMeshConv,
+                probeXNorm: _rcProbeXNorm,
+                viewportPngBytes: shot?.bytes,
+              )
+            : await RcBeamReportGenerator.exportDocx(
+                linear: _rcLinear!,
+                active: _rcActive!,
+                meshConv: _rcMeshConv,
+                probeXNorm: _rcProbeXNorm,
+                viewportPngBytes: shot?.bytes,
+                pngWidthPx: shot?.width,
+                pngHeightPx: shot?.height,
+              );
+        if (savedPath == null) {
+          _showSnack('Đã hủy lưu tệp báo cáo.', bg: const Color(0xFF475569), seconds: 2);
+        } else {
+          _showSnack('Xuất báo cáo Dầm BTCT ${asPdf ? "PDF" : "Word (.docx)"} thành công!\n$savedPath', seconds: 5);
+        }
+        return;
+      }
       final probe = CalfemNonlinearEngine.probeMember(
         model: _model,
         resultNL: _resActive,
@@ -462,18 +535,55 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
     }
   }
 
+  Future<void> _exportConnectionDrawing({required bool isAutoCad}) async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      final ni = _selectedNode.clamp(0, _model.nNodes - 1);
+      final rep = ConnectionCalculator.analyzeNode(
+        model: _model,
+        result: _resActive,
+        nodeIndex: ni,
+        params: _connParams,
+        loadFactor: _loadFactor,
+      );
+      final path = isAutoCad
+          ? await ConnectionDrawingExporter.exportNodeDxf(model: _model, report: rep)
+          : await ConnectionDrawingExporter.exportNodeBlueprintPdf(model: _model, report: rep);
+      if (path == null) {
+        _showSnack('Đã hủy xuất bản vẽ liên kết.', bg: const Color(0xFF475569), seconds: 2);
+      } else {
+        _showSnack(
+          isAutoCad
+              ? 'Đã xuất bản vẽ cấu tạo AutoCAD (.dxf) Nút ${ni + 1} tỷ lệ 1:1 (mm)!\n$path'
+              : 'Đã xuất bản vẽ kỹ thuật liên kết PDF Nút ${ni + 1}!\n$path',
+          seconds: 5,
+        );
+      }
+    } catch (e) {
+      _showSnack('Lỗi xuất bản vẽ liên kết: $e', bg: const Color(0xFFB91C1C), seconds: 4);
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   Future<void> _exportCsv() async {
     if (_exporting) return;
     setState(() => _exporting = true);
     try {
-      final path = await FlutterReportGenerator.exportCsv(
-        model: _model,
-        linear: _resLinear,
-        nonlinear: _resActive,
-        designChecks: _designChecks,
-        buckling: _buckling,
-        loadFactor: _loadFactor,
-      );
+      final path = _isRcBeamMode
+          ? await RcBeamReportGenerator.exportCsv(
+              active: _rcActive ?? RcBeamFiberEngine.solve(_rcConfig, method: _method),
+              meshConv: _rcMeshConv,
+            )
+          : await FlutterReportGenerator.exportCsv(
+              model: _model,
+              linear: _resLinear,
+              nonlinear: _resActive,
+              designChecks: _designChecks,
+              buckling: _buckling,
+              loadFactor: _loadFactor,
+            );
       if (path == null) {
         _showSnack('Đã hủy xuất CSV.', bg: const Color(0xFF475569), seconds: 2);
       } else {
@@ -625,7 +735,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                             ),
                             const SizedBox(height: 1),
                             Text(
-                              'ĐH Bách Khoa TP.HCM • GVHD: PGS. TS Ngô Hữu Cường • HV: Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624) • Liên hệ: vothanhvang@gmail.com • ĐT: 0973.993.494',
+                              'ĐH Bách Khoa TP.HCM • GVHD: PGS. TS Ngô Hữu Cường • HV: Lâm Phúc Tâm (2670621) - Võ Thanh Vang (2670624) • Liên hệ: vothanhvang@gmail.com',
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 9.7,
@@ -677,18 +787,20 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                         ),
                       ],
                     ),
-                    // Xuất báo cáo tổng hợp (Word / PDF kèm ảnh 3D + CSV Excel + PNG)
+                    // Xuất báo cáo tổng hợp (Word / PDF kèm ảnh 3D + CSV Excel + PNG + Bản vẽ liên kết PDF/AutoCAD)
                     PopupMenuButton<String>(
-                      tooltip: 'Xuất Báo cáo & Dữ liệu',
+                      tooltip: 'Xuất Báo cáo & Bản vẽ Kỹ thuật',
                       enabled: !_exporting,
                       onSelected: (v) {
                         if (v == 'docx') _exportReport(false);
                         if (v == 'pdf') _exportReport(true);
                         if (v == 'csv') _exportCsv();
                         if (v == 'png') _exportPngSnapshot();
+                        if (v == 'conn_pdf') _exportConnectionDrawing(isAutoCad: false);
+                        if (v == 'conn_dxf') _exportConnectionDrawing(isAutoCad: true);
                       },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(
                           value: 'docx',
                           child: Row(children: [
                             Icon(Icons.description, size: 17, color: Color(0xFF3B82F6)),
@@ -696,7 +808,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                             Text('Xuất Word (.docx + ảnh 3D/2D)', style: TextStyle(fontSize: 12.2)),
                           ]),
                         ),
-                        PopupMenuItem(
+                        const PopupMenuItem(
                           value: 'pdf',
                           child: Row(children: [
                             Icon(Icons.picture_as_pdf, size: 17, color: Color(0xFFEF4444)),
@@ -704,7 +816,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                             Text('Xuất PDF (.pdf + ảnh 3D/2D)', style: TextStyle(fontSize: 12.2)),
                           ]),
                         ),
-                        PopupMenuItem(
+                        const PopupMenuItem(
                           value: 'csv',
                           child: Row(children: [
                             Icon(Icons.table_chart_outlined, size: 17, color: Color(0xFF10B981)),
@@ -712,7 +824,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                             Text('Xuất bảng Excel (.csv UTF-8)', style: TextStyle(fontSize: 12.2)),
                           ]),
                         ),
-                        PopupMenuItem(
+                        const PopupMenuItem(
                           value: 'png',
                           child: Row(children: [
                             Icon(Icons.camera_alt_outlined, size: 17, color: Color(0xFFF59E0B)),
@@ -720,6 +832,27 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                             Text('Chụp ảnh khung hình (.png 2×)', style: TextStyle(fontSize: 12.2)),
                           ]),
                         ),
+                        if (!_isRcBeamMode) ...[
+                          const PopupMenuDivider(),
+                          PopupMenuItem(
+                            value: 'conn_pdf',
+                            child: Row(children: [
+                              const Icon(Icons.picture_as_pdf_outlined, size: 17, color: Color(0xFFF43F5E)),
+                              const SizedBox(width: 8),
+                              Text('Bản vẽ liên kết Nút ${_selectedNode + 1} (.pdf)',
+                                  style: const TextStyle(fontSize: 12.2, fontWeight: FontWeight.w600)),
+                            ]),
+                          ),
+                          PopupMenuItem(
+                            value: 'conn_dxf',
+                            child: Row(children: [
+                              const Icon(Icons.architecture, size: 17, color: Color(0xFF06B6D4)),
+                              const SizedBox(width: 8),
+                              Text('Bản vẽ AutoCAD Nút ${_selectedNode + 1} (.dxf)',
+                                  style: const TextStyle(fontSize: 12.2, fontWeight: FontWeight.w600)),
+                            ]),
+                          ),
+                        ],
                       ],
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
@@ -773,12 +906,15 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                         selectedIndex: _mobileTab,
                         height: 60,
                         onDestinationSelected: (i) => setState(() => _mobileTab = i),
-                        destinations: const [
-                          NavigationDestination(icon: Icon(Icons.view_in_ar), label: 'Mô phỏng'),
-                          NavigationDestination(icon: Icon(Icons.precision_manufacturing), label: 'Liên kết'),
-                          NavigationDestination(icon: Icon(Icons.biotech), label: 'Phẫu thuật'),
-                          NavigationDestination(icon: Icon(Icons.tune), label: 'Thông số'),
-                          NavigationDestination(icon: Icon(Icons.analytics), label: 'Phân tích'),
+                        destinations: [
+                          const NavigationDestination(icon: Icon(Icons.view_in_ar), label: 'Mô phỏng'),
+                          NavigationDestination(
+                            icon: Icon(_isRcBeamMode ? Icons.grid_on : Icons.precision_manufacturing),
+                            label: _isRcBeamMode ? 'Ma trận' : 'Liên kết',
+                          ),
+                          const NavigationDestination(icon: Icon(Icons.biotech), label: 'Phẫu thuật'),
+                          const NavigationDestination(icon: Icon(Icons.tune), label: 'Thông số'),
+                          const NavigationDestination(icon: Icon(Icons.analytics), label: 'Phân tích'),
                         ],
                       ),
               );
@@ -837,11 +973,15 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
                   child: SegmentedButton<int>(
                     showSelectedIcon: false,
-                    segments: const [
-                      ButtonSegment(value: 0, icon: Icon(Icons.biotech, size: 13.5), label: Text('Phẫu thuật', style: TextStyle(fontSize: 10.0))),
-                      ButtonSegment(value: 1, icon: Icon(Icons.precision_manufacturing, size: 13.5), label: Text('Liên kết', style: TextStyle(fontSize: 10.0))),
-                      ButtonSegment(value: 2, icon: Icon(Icons.analytics, size: 13.5), label: Text('Biểu đồ', style: TextStyle(fontSize: 10.0))),
-                      ButtonSegment(value: 3, icon: Icon(Icons.code, size: 13.5), label: Text('Lý thuyết', style: TextStyle(fontSize: 10.0))),
+                    segments: [
+                      const ButtonSegment(value: 0, icon: Icon(Icons.biotech, size: 13.5), label: Text('Phẫu thuật', style: TextStyle(fontSize: 10.0))),
+                      ButtonSegment(
+                        value: 1,
+                        icon: Icon(_isRcBeamMode ? Icons.grid_on : Icons.precision_manufacturing, size: 13.5),
+                        label: Text(_isRcBeamMode ? 'Ma trận' : 'Liên kết', style: const TextStyle(fontSize: 10.0)),
+                      ),
+                      const ButtonSegment(value: 2, icon: Icon(Icons.analytics, size: 13.5), label: Text('Biểu đồ', style: TextStyle(fontSize: 10.0))),
+                      const ButtonSegment(value: 3, icon: Icon(Icons.code, size: 13.5), label: Text('Lý thuyết', style: TextStyle(fontSize: 10.0))),
                     ],
                     selected: {_rightTab},
                     onSelectionChanged: (s) => setState(() => _rightTab = s.first),
@@ -936,45 +1076,47 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                         onSelectionChanged: (s) => setState(() => _is3D = s.first),
                       ),
                       const SizedBox(width: 6),
-                      FilterChip(
-                        visualDensity: VisualDensity.compact,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        avatar: Icon(Icons.content_cut, size: 14, color: _surgicalMode ? Colors.black : const Color(0xFF00E5FF)),
-                        label: Text('Phẫu thuật', style: TextStyle(fontSize: 10.6, fontWeight: FontWeight.bold, color: _surgicalMode ? Colors.black : null)),
-                        selected: _surgicalMode,
-                        selectedColor: const Color(0xFF00E5FF),
-                        onSelected: (v) => setState(() => _surgicalMode = v),
-                      ),
-                      const SizedBox(width: 5),
-                      FilterChip(
-                        visualDensity: VisualDensity.compact,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        avatar: Icon(
-                          Icons.precision_manufacturing,
-                          size: 14,
-                          color: _connectionMode == ConnectionDisplayMode.fabrication
-                              ? Colors.black
-                              : const Color(0xFFFBBF24),
+                      if (!_isRcBeamMode) ...[
+                        FilterChip(
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          avatar: Icon(Icons.content_cut, size: 14, color: _surgicalMode ? Colors.black : const Color(0xFF00E5FF)),
+                          label: Text('Phẫu thuật', style: TextStyle(fontSize: 10.6, fontWeight: FontWeight.bold, color: _surgicalMode ? Colors.black : null)),
+                          selected: _surgicalMode,
+                          selectedColor: const Color(0xFF00E5FF),
+                          onSelected: (v) => setState(() => _surgicalMode = v),
                         ),
-                        label: Text(
-                          _connectionMode == ConnectionDisplayMode.fabrication ? 'Chế tạo' : 'Sơ đồ',
-                          style: TextStyle(
-                            fontSize: 10.6,
-                            fontWeight: FontWeight.bold,
-                            color: _connectionMode == ConnectionDisplayMode.fabrication ? Colors.black : null,
+                        const SizedBox(width: 5),
+                        FilterChip(
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          avatar: Icon(
+                            Icons.precision_manufacturing,
+                            size: 14,
+                            color: _connectionMode == ConnectionDisplayMode.fabrication
+                                ? Colors.black
+                                : const Color(0xFFFBBF24),
                           ),
+                          label: Text(
+                            _connectionMode == ConnectionDisplayMode.fabrication ? 'Chế tạo' : 'Sơ đồ',
+                            style: TextStyle(
+                              fontSize: 10.6,
+                              fontWeight: FontWeight.bold,
+                              color: _connectionMode == ConnectionDisplayMode.fabrication ? Colors.black : null,
+                            ),
+                          ),
+                          selected: _connectionMode == ConnectionDisplayMode.fabrication,
+                          selectedColor: const Color(0xFFFBBF24),
+                          onSelected: (v) => setState(() {
+                            _connectionMode = v ? ConnectionDisplayMode.fabrication : ConnectionDisplayMode.schematic;
+                            if (v) {
+                              _rightTab = 1;
+                              _showRightPanel = true;
+                            }
+                          }),
                         ),
-                        selected: _connectionMode == ConnectionDisplayMode.fabrication,
-                        selectedColor: const Color(0xFFFBBF24),
-                        onSelected: (v) => setState(() {
-                          _connectionMode = v ? ConnectionDisplayMode.fabrication : ConnectionDisplayMode.schematic;
-                          if (v) {
-                            _rightTab = 1;
-                            _showRightPanel = true;
-                          }
-                        }),
-                      ),
-                      const SizedBox(width: 5),
+                        const SizedBox(width: 5),
+                      ],
                       FilterChip(
                         visualDensity: VisualDensity.compact,
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -999,41 +1141,56 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                           borderRadius: BorderRadius.circular(7),
                           border: Border.all(color: border),
                         ),
-                        child: DropdownButton<ContourField>(
-                          value: _contourField,
-                          isDense: true,
-                          underline: const SizedBox(),
-                          items: [
-                            for (final f in ContourField.values)
-                              DropdownMenuItem(value: f, child: Text(f.label, style: const TextStyle(fontSize: 11.0))),
-                          ],
-                          onChanged: (v) {
-                            if (v != null) setState(() => _contourField = v);
-                          },
-                        ),
+                        child: _isRcBeamMode
+                            ? DropdownButton<RcBeamContourField>(
+                                value: _rcField,
+                                isDense: true,
+                                underline: const SizedBox(),
+                                items: [
+                                  for (final f in RcBeamContourField.values)
+                                    DropdownMenuItem(value: f, child: Text(f.label, style: const TextStyle(fontSize: 11.0))),
+                                ],
+                                onChanged: (v) {
+                                  if (v != null) setState(() => _rcField = v);
+                                },
+                              )
+                            : DropdownButton<ContourField>(
+                                value: _contourField,
+                                isDense: true,
+                                underline: const SizedBox(),
+                                items: [
+                                  for (final f in ContourField.values)
+                                    DropdownMenuItem(value: f, child: Text(f.label, style: const TextStyle(fontSize: 11.0))),
+                                ],
+                                onChanged: (v) {
+                                  if (v != null) setState(() => _contourField = v);
+                                },
+                              ),
                       ),
-                      const SizedBox(width: 6),
-                      OutlinedButton.icon(
-                        onPressed: _toggleAnimation,
-                        icon: Icon(
-                          _animTimer == null ? Icons.play_arrow : Icons.stop,
-                          size: 15,
-                          color: _animTimer == null ? null : const Color(0xFFF43F5E),
-                        ),
-                        label: Text(
-                          _animTimer == null ? 'Mô phỏng' : '${(_playbackFrac * 100).round()}%',
-                          style: TextStyle(
-                            fontSize: 10.6,
-                            fontWeight: FontWeight.w600,
+                      if (!_isRcBeamMode) ...[
+                        const SizedBox(width: 6),
+                        OutlinedButton.icon(
+                          onPressed: _toggleAnimation,
+                          icon: Icon(
+                            _animTimer == null ? Icons.play_arrow : Icons.stop,
+                            size: 15,
                             color: _animTimer == null ? null : const Color(0xFFF43F5E),
                           ),
+                          label: Text(
+                            _animTimer == null ? 'Mô phỏng' : '${(_playbackFrac * 100).round()}%',
+                            style: TextStyle(
+                              fontSize: 10.6,
+                              fontWeight: FontWeight.w600,
+                              color: _animTimer == null ? null : const Color(0xFFF43F5E),
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                            visualDensity: VisualDensity.compact,
+                            side: _animTimer == null ? null : const BorderSide(color: Color(0xFFF43F5E), width: 1.2),
+                          ),
                         ),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                          visualDensity: VisualDensity.compact,
-                          side: _animTimer == null ? null : const BorderSide(color: Color(0xFFF43F5E), width: 1.2),
-                        ),
-                      ),
+                      ],
                       IconButton(
                         tooltip: 'Chụp ảnh khung nhìn (.png 2×)',
                         icon: const Icon(Icons.camera_alt_outlined, size: 17, color: Color(0xFFF59E0B)),
@@ -1060,7 +1217,8 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
         ),
 
         // Cảnh báo tức thời nếu hệ biến hình
-        if (_resActive.warningMessage != null)
+        if ((!_isRcBeamMode && _resActive.warningMessage != null) ||
+            (_isRcBeamMode && _rcActive?.warningMessage != null))
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -1071,7 +1229,7 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    _resActive.warningMessage!,
+                    _isRcBeamMode ? _rcActive!.warningMessage! : _resActive.warningMessage!,
                     style: const TextStyle(color: Colors.white, fontSize: 11.0, fontWeight: FontWeight.w600),
                   ),
                 ),
@@ -1084,14 +1242,23 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  onPressed: () => _updateAndSolve(() {
-                    final defSup = TrussModelData.defaultSupportsFor(_preset);
-                    _nodeSupports = [
-                      for (int i = 0; i < _model.nNodes; i++) i < defSup.length ? defSup[i] : NodeSupportType.free,
-                    ];
-                    _supportDirections = List<SupportDirection>.filled(_model.nNodes, SupportDirection.auto);
-                    _springStiffnessKnMm = 500.0;
-                  }),
+                  onPressed: () {
+                    if (_isRcBeamMode) {
+                      _updateRcBeam((c) => c.copyWith(
+                            leftSupport: BeamSupportType.pin,
+                            rightSupport: BeamSupportType.roller,
+                          ));
+                    } else {
+                      _updateAndSolve(() {
+                        final defSup = TrussModelData.defaultSupportsFor(_preset);
+                        _nodeSupports = [
+                          for (int i = 0; i < _model.nNodes; i++) i < defSup.length ? defSup[i] : NodeSupportType.free,
+                        ];
+                        _supportDirections = List<SupportDirection>.filled(_model.nNodes, SupportDirection.auto);
+                        _springStiffnessKnMm = 500.0;
+                      });
+                    }
+                  },
                   child: const Text('Khôi phục gối', style: TextStyle(fontSize: 10.8, fontWeight: FontWeight.bold)),
                 ),
               ],
@@ -1102,59 +1269,82 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
         Expanded(
           child: RepaintBoundary(
             key: _viewportShotKey,
-            child: _is3D
-                ? AnsysViewport3D(
-                    model: _model,
-                    result: _resActive,
-                    field: _contourField,
-                    deformScale: _deformScale,
-                    playbackFraction: _playbackFrac,
-                    selectedElem: _selectedElem,
-                    selectedNode: _selectedNode,
-                    probeXi: _probeXi,
-                    surgicalMode: _surgicalMode,
-                    darkMode: _darkMode,
-                    showColorBar: _showColorBar,
-                    onToggleColorBar: (v) => setState(() => _showColorBar = v),
-                    connectionMode: _connectionMode,
-                    connectionType: _connParams.detailType,
-                    designChecks: _designChecks,
-                    onProbeChanged: (e, xi) => setState(() {
-                      _selectedElem = e;
-                      _probeXi = xi;
-                    }),
-                    onNodeTapped: (n) => setState(() {
-                      _selectedNode = n;
-                      _rightTab = 1;
-                      _showRightPanel = true;
-                    }),
-                  )
-                : AnsysViewport2D(
-                    model: _model,
-                    result: _resActive,
-                    field: _contourField,
-                    deformScale: _deformScale,
-                    playbackFraction: _playbackFrac,
-                    selectedElem: _selectedElem,
-                    selectedNode: _selectedNode,
-                    probeXi: _probeXi,
-                    surgicalMode: _surgicalMode,
-                    darkMode: _darkMode,
-                    showColorBar: _showColorBar,
-                    onToggleColorBar: (v) => setState(() => _showColorBar = v),
-                    connectionMode: _connectionMode,
-                    connectionType: _connParams.detailType,
-                    designChecks: _designChecks,
-                    onProbeChanged: (e, xi) => setState(() {
-                      _selectedElem = e;
-                      _probeXi = xi;
-                    }),
-                    onNodeTapped: (n) => setState(() {
-                      _selectedNode = n;
-                      _rightTab = 1;
-                      _showRightPanel = true;
-                    }),
-                  ),
+            child: _isRcBeamMode
+                ? (_is3D
+                    ? RcBeamViewport3D(
+                        result: _rcActive!,
+                        field: _rcField,
+                        deformScale: _rcDeformScale,
+                        probeXNorm: _rcProbeXNorm,
+                        darkMode: _darkMode,
+                        showColorBar: _showColorBar,
+                        onToggleColorBar: (v) => setState(() => _showColorBar = v),
+                        onProbeXChanged: (xN) => setState(() => _rcProbeXNorm = xN),
+                      )
+                    : RcBeamViewport2D(
+                        result: _rcActive!,
+                        resultLinear: _rcLinear!,
+                        field: _rcField,
+                        deformScale: _rcDeformScale,
+                        probeXNorm: _rcProbeXNorm,
+                        darkMode: _darkMode,
+                        showColorBar: _showColorBar,
+                        onToggleColorBar: (v) => setState(() => _showColorBar = v),
+                        onProbeXChanged: (xN) => setState(() => _rcProbeXNorm = xN),
+                      ))
+                : (_is3D
+                    ? AnsysViewport3D(
+                        model: _model,
+                        result: _resActive,
+                        field: _contourField,
+                        deformScale: _deformScale,
+                        playbackFraction: _playbackFrac,
+                        selectedElem: _selectedElem,
+                        selectedNode: _selectedNode,
+                        probeXi: _probeXi,
+                        surgicalMode: _surgicalMode,
+                        darkMode: _darkMode,
+                        showColorBar: _showColorBar,
+                        onToggleColorBar: (v) => setState(() => _showColorBar = v),
+                        connectionMode: _connectionMode,
+                        connectionType: _connParams.detailType,
+                        designChecks: _designChecks,
+                        onProbeChanged: (e, xi) => setState(() {
+                          _selectedElem = e;
+                          _probeXi = xi;
+                        }),
+                        onNodeTapped: (n) => setState(() {
+                          _selectedNode = n;
+                          _rightTab = 1;
+                          _showRightPanel = true;
+                        }),
+                      )
+                    : AnsysViewport2D(
+                        model: _model,
+                        result: _resActive,
+                        field: _contourField,
+                        deformScale: _deformScale,
+                        playbackFraction: _playbackFrac,
+                        selectedElem: _selectedElem,
+                        selectedNode: _selectedNode,
+                        probeXi: _probeXi,
+                        surgicalMode: _surgicalMode,
+                        darkMode: _darkMode,
+                        showColorBar: _showColorBar,
+                        onToggleColorBar: (v) => setState(() => _showColorBar = v),
+                        connectionMode: _connectionMode,
+                        connectionType: _connParams.detailType,
+                        designChecks: _designChecks,
+                        onProbeChanged: (e, xi) => setState(() {
+                          _selectedElem = e;
+                          _probeXi = xi;
+                        }),
+                        onNodeTapped: (n) => setState(() {
+                          _selectedNode = n;
+                          _rightTab = 1;
+                          _showRightPanel = true;
+                        }),
+                      )),
           ),
         ),
 
@@ -1177,26 +1367,47 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
                     overlayShape: const RoundSliderOverlayShape(overlayRadius: 11.0),
                   ),
                   child: Slider(
-                    value: _deformScale.clamp(1.0, 500.0),
+                    value: _isRcBeamMode ? _rcDeformScale.clamp(1.0, 150.0) : _deformScale.clamp(1.0, 500.0),
                     min: 1.0,
-                    max: 500.0,
-                    onChanged: (v) => setState(() => _deformScale = v),
+                    max: _isRcBeamMode ? 150.0 : 500.0,
+                    onChanged: (v) => setState(() {
+                      if (_isRcBeamMode) {
+                        _rcDeformScale = v;
+                      } else {
+                        _deformScale = v;
+                      }
+                    }),
                   ),
                 ),
               ),
-              Text('×${_deformScale.round()}',
+              Text('×${(_isRcBeamMode ? _rcDeformScale : _deformScale).round()}',
                   style: const TextStyle(fontSize: 10.6, fontWeight: FontWeight.bold, color: Color(0xFF38BDF8))),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  '${_animTimer != null ? "▶ ${(100 * _playbackFrac).round()}% | " : ""}'
-                  'T${_selectedElem + 1}(${probe.memberLabel}, ξ=${probe.xi.toStringAsFixed(2)}) '
-                  'σ=${(probe.sigmaXxMpa * _playbackFrac).toStringAsFixed(2)} MPa  |  '
-                  'U_max=${maxUtil.toStringAsFixed(1)}%'
-                  '${_buckling.hasBucklingMode ? "  |  α_cr=${_buckling.alphaCr.toStringAsFixed(1)}" : ""}',
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 10.3, fontFamily: 'DejaVuSansMono'),
-                ),
+                child: Builder(builder: (_) {
+                  if (_isRcBeamMode && _rcActive != null) {
+                    final rcP = RcBeamFiberEngine.probeBeamAt(_rcActive!, _rcProbeXNorm);
+                    final eiPct = 100.0 * rcP.section.eiEffNmm2 / math.max(1.0, _rcActive!.eiGrossNmm2);
+                    return Text(
+                      'Dầm BTCT (${_rcConfig.nElems}PT, ${_rcConfig.nFibers} thớ) | '
+                      'M_max=${_rcActive!.mMaxKnm.toStringAsFixed(1)} kN·m | '
+                      'v_mid=${_rcActive!.vMidMm.toStringAsFixed(2)} mm | '
+                      'x_NA=${rcP.section.xNeutralDepthMm.toStringAsFixed(0)} mm | '
+                      'EI=${eiPct.toStringAsFixed(0)}%',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 10.3, fontFamily: 'DejaVuSansMono'),
+                    );
+                  }
+                  return Text(
+                    '${_animTimer != null ? "▶ ${(100 * _playbackFrac).round()}% | " : ""}'
+                    'T${_selectedElem + 1}(${probe.memberLabel}, ξ=${probe.xi.toStringAsFixed(2)}) '
+                    'σ=${(probe.sigmaXxMpa * _playbackFrac).toStringAsFixed(2)} MPa  |  '
+                    'U_max=${maxUtil.toStringAsFixed(1)}%'
+                    '${_buckling.hasBucklingMode ? "  |  α_cr=${_buckling.alphaCr.toStringAsFixed(1)}" : ""}',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 10.3, fontFamily: 'DejaVuSansMono'),
+                  );
+                }),
               ),
             ],
           ),
@@ -1407,15 +1618,44 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
           ),
         ),
         Expanded(
-          child: _leftTab == 0
-              ? _buildLeftModelTab(cardBg, border)
-              : (_leftTab == 1 ? _buildLeftGeometryTab(cardBg, border) : _buildLeftLoadsMaterialTab(cardBg, border)),
+          child: _isRcBeamMode
+              ? (_leftTab == 0
+                  ? _buildRcBeamLeftModelTab(cardBg, border)
+                  : (_leftTab == 1 ? _buildRcBeamLeftGeomTab(cardBg, border) : _buildRcBeamLeftMatTab(cardBg, border)))
+              : (_leftTab == 0
+                  ? _buildLeftModelTab(cardBg, border)
+                  : (_leftTab == 1 ? _buildLeftGeometryTab(cardBg, border) : _buildLeftLoadsMaterialTab(cardBg, border))),
         ),
       ],
     );
   }
 
-  /// TAB 0 TRÁI: Bài toán mẫu (8 dàn) + Thuật toán + Chọn tiết diện & Xoay 360° riêng từng thanh
+  /// Thanh chuyển nhanh loại kết cấu ngay trong "Mục 1. Mô hình kết cấu & Bộ giải CALFEM"
+  Widget _buildStructureTypeSwitch() {
+    return SegmentedButton<bool>(
+      showSelectedIcon: false,
+      style: const ButtonStyle(
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      segments: const [
+        ButtonSegment(
+          value: false,
+          icon: Icon(Icons.architecture, size: 13),
+          label: Text('Hệ Dàn (8 mẫu)', style: TextStyle(fontSize: 10.0, fontWeight: FontWeight.bold)),
+        ),
+        ButtonSegment(
+          value: true,
+          icon: Icon(Icons.view_stream, size: 13),
+          label: Text('Dầm BTCT (Thớ)', style: TextStyle(fontSize: 10.0, fontWeight: FontWeight.bold)),
+        ),
+      ],
+      selected: {_isRcBeamMode},
+      onSelectionChanged: (s) => _setRcBeamMode(s.first),
+    );
+  }
+
+  /// TAB 0 TRÁI: Bài toán mẫu (8 dàn + Dầm BTCT Thớ) + Thuật toán + Chọn tiết diện & Xoay 360° riêng từng thanh
   Widget _buildLeftModelTab(Color cardBg, Color border) {
     final activeIdx = _selectedElem.clamp(0, _model.nElems - 1);
     final activeCfg = _model.sectionConfigForElem(activeIdx);
@@ -1431,21 +1671,38 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
             children: [
               const Text('1. Mô hình kết cấu & Bộ giải CALFEM',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.4, color: Color(0xFF38BDF8))),
-              const SizedBox(height: 7),
-              DropdownButtonFormField<TrussPreset>(
+              const SizedBox(height: 6),
+              SizedBox(width: double.infinity, child: _buildStructureTypeSwitch()),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
                 key: ValueKey('preset_${_preset.code}'),
-                initialValue: _preset,
+                initialValue: _preset.code,
                 isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Thư viện kết cấu mẫu (8 mô hình)', isDense: true, border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                    labelText: 'Thư viện kết cấu mẫu (8 Hệ dàn + Dầm BTCT Thớ)', isDense: true, border: OutlineInputBorder()),
                 items: [
                   for (final p in TrussPreset.values)
                     DropdownMenuItem(
-                      value: p,
+                      value: p.code,
                       child: Text(p.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
                     ),
+                  const DropdownMenuItem(
+                    value: '__rc_beam_fiber__',
+                    child: Text(
+                      '9. Dầm Bê tông Cốt thép chịu uốn — Phương pháp Thớ (L/h = 5–10)',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                    ),
+                  ),
                 ],
-                onChanged: (v) {
-                  if (v == null) return;
+                onChanged: (code) {
+                  if (code == null) return;
+                  if (code == '__rc_beam_fiber__') {
+                    _setRcBeamMode(true);
+                    return;
+                  }
+                  final v = TrussPreset.values.firstWhere((e) => e.code == code, orElse: () => _preset);
                   _updateAndSolve(() {
                     _preset = v;
                     _customCoords = null;
@@ -2545,6 +2802,32 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
   }
 
   Widget _buildRightContent(ProbeInspection probe, int tabIdx) {
+    if (_isRcBeamMode) {
+      if (_rcActive == null || _rcLinear == null) _recomputeRcBeam(computeCurves: true);
+      if (tabIdx == 0) {
+        return RcBeamSurgicalPanel(
+          result: _rcActive!,
+          resultLinear: _rcLinear!,
+          probeXNorm: _rcProbeXNorm,
+          darkMode: _darkMode,
+          onProbeXChanged: (xN) => setState(() => _rcProbeXNorm = xN),
+        );
+      }
+      if (tabIdx == 1) {
+        return RcBeamFemMatrixPanel(result: _rcActive!, darkMode: _darkMode);
+      }
+      if (tabIdx == 2) {
+        return RcBeamChartsPanel(
+          resultActive: _rcActive!,
+          resultLinear: _rcLinear!,
+          pushover: _rcPushover,
+          momentCurvature: _rcMomentCurv,
+          meshConvergence: _rcMeshConv,
+          darkMode: _darkMode,
+        );
+      }
+      return RcBeamTheoryPanel(result: _rcActive!, darkMode: _darkMode);
+    }
     if (tabIdx == 0) {
       return SurgicalDissectionPanel(
         model: _model,
@@ -3028,6 +3311,783 @@ class _HomeStudioScreenState extends State<HomeStudioScreen> {
           ],
         ],
       ),
+    );
+  }
+
+  // ===========================================================================
+  // CÁC TAB ĐIỀU KHIỂN TRÁI CHO DẦM BÊ TÔNG CỐT THÉP (PHƯƠNG PHÁP THỚ)
+  // ===========================================================================
+  Widget _buildRcBeamLeftModelTab(Color cardBg, Color border) {
+    final c = _rcConfig;
+    final maxA = c.loadType == RcBeamLoadType.threePoint ? 0.95 * c.spanMm : 0.49 * c.spanMm;
+    final minA = 0.05 * c.spanMm;
+    return ListView(
+      padding: const EdgeInsets.all(10),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: border)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('1. Mô hình kết cấu & Bộ giải CALFEM',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.4, color: Color(0xFF38BDF8))),
+              const SizedBox(height: 6),
+              SizedBox(width: double.infinity, child: _buildStructureTypeSwitch()),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<SolverMethod>(
+                key: ValueKey('rc_method_${_method.code}'),
+                initialValue: _method,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                    labelText: 'Thuật toán giải PTHH (Rayleigh-Ritz / NR)', isDense: true, border: OutlineInputBorder()),
+                items: [
+                  for (final m in SolverMethod.values)
+                    DropdownMenuItem(value: m, child: Text(m.label, style: const TextStyle(fontSize: 10.8))),
+                ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  setState(() {
+                    _method = v;
+                    _recomputeRcBeam(computeCurves: false);
+                  });
+                },
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Phi tuyến vật liệu (Phương pháp Thớ)',
+                            style: TextStyle(fontSize: 10.6, fontWeight: FontWeight.bold)),
+                        Text(
+                          c.nonlinearMaterial
+                              ? 'Bê tông Hognestad + Nứt kéo + Thép đàn-dẻo'
+                              : 'Đàn hồi tuyến tính nguyên vẹn (beam2e)',
+                          style: TextStyle(
+                              fontSize: 9.2,
+                              color: _darkMode ? const Color(0xFF94A3B8) : const Color(0xFF475569)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: c.nonlinearMaterial,
+                    onChanged: (v) => _updateRcBeam((x) => x.copyWith(nonlinearMaterial: v)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: border)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('2. Sơ đồ Tải (3 điểm / 4 điểm) & Chia lưới PTHH',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.2, color: Color(0xFF10B981))),
+              const SizedBox(height: 7),
+              SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<RcBeamLoadType>(
+                  showSelectedIcon: false,
+                  style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                  segments: const [
+                    ButtonSegment(value: RcBeamLoadType.threePoint, label: Text('Uốn 3 điểm (QL/4)', style: TextStyle(fontSize: 10.2))),
+                    ButtonSegment(value: RcBeamLoadType.fourPoint, label: Text('Uốn 4 điểm (2 lực)', style: TextStyle(fontSize: 10.2))),
+                  ],
+                  selected: {c.loadType},
+                  onSelectionChanged: (s) {
+                    final nextType = s.first;
+                    final nextA = nextType == RcBeamLoadType.threePoint ? 0.5 * c.spanMm : (c.spanMm / 3.0).roundToDouble();
+                    _updateRcBeam((x) => x.copyWith(loadType: nextType, loadAMm: nextA));
+                  },
+                ),
+              ),
+              const SizedBox(height: 6),
+              _EditableParamSlider(
+                label: 'Tổng ngoại lực Q',
+                value: c.loadQKn,
+                min: 10,
+                max: 400,
+                hardMin: 1,
+                hardMax: 2000,
+                unit: 'kN',
+                darkMode: _darkMode,
+                onChanged: (v) => _updateRcBeam((x) => x.copyWith(loadQKn: v)),
+              ),
+              _EditableParamSlider(
+                label: 'Khoảng cách lực từ gối trái a',
+                value: c.effectiveAMm,
+                min: minA,
+                max: maxA,
+                hardMin: minA,
+                hardMax: maxA,
+                unit: 'mm',
+                isInt: true,
+                darkMode: _darkMode,
+                onChanged: (v) => _updateRcBeam((x) => x.copyWith(loadAMm: v)),
+              ),
+              Wrap(
+                spacing: 5,
+                runSpacing: 4,
+                children: [
+                  if (c.loadType == RcBeamLoadType.threePoint)
+                    ActionChip(
+                      label: const Text('a = L/2 (QL/4)', style: TextStyle(fontSize: 9.5)),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _updateRcBeam((x) => x.copyWith(loadAMm: 0.5 * x.spanMm)),
+                    ),
+                  ActionChip(
+                    label: const Text('a = L/3', style: TextStyle(fontSize: 9.5)),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _updateRcBeam((x) => x.copyWith(loadAMm: (x.spanMm / 3.0).roundToDouble())),
+                  ),
+                  ActionChip(
+                    label: const Text('a = L/4', style: TextStyle(fontSize: 9.5)),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _updateRcBeam((x) => x.copyWith(loadAMm: 0.25 * x.spanMm)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.45)),
+                ),
+                child: Text(
+                  c.momentFormulaLabel,
+                  style: const TextStyle(fontSize: 9.8, fontWeight: FontWeight.bold, color: Color(0xFFFBBF24)),
+                ),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<int>(
+                key: ValueKey('rc_nelem_${c.nElems}'),
+                initialValue: const [2, 4, 6, 8, 12, 16, 24, 32].contains(c.nElems) ? c.nElems : 8,
+                isExpanded: true,
+                isDense: true,
+                decoration: const InputDecoration(
+                  labelText: 'Số phần tử PTHH (chia hai nửa đối xứng)',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  for (final n in const [2, 4, 6, 8, 12, 16, 24, 32])
+                    DropdownMenuItem(
+                      value: n,
+                      child: Text('$n phần tử (${n ~/ 2} nửa trái + ${n ~/ 2} nửa phải)', style: const TextStyle(fontSize: 10.6)),
+                    ),
+                ],
+                onChanged: (v) {
+                  if (v != null) _updateRcBeam((x) => x.copyWith(nElems: v));
+                },
+              ),
+              const SizedBox(height: 6),
+              _EditableParamSlider(
+                label: 'Số thớ bê tông n_fib',
+                value: c.nFibers.toDouble(),
+                min: 10,
+                max: 80,
+                hardMin: 6,
+                hardMax: 120,
+                unit: 'thớ',
+                isInt: true,
+                darkMode: _darkMode,
+                onChanged: (v) => _updateRcBeam((x) => x.copyWith(nFibers: v.round())),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRcBeamLeftGeomTab(Color cardBg, Color border) {
+    final c = _rcConfig;
+    final lh = c.spanToDepthRatio;
+    final lhOk = lh >= 5.0 && lh <= 10.0;
+    return ListView(
+      padding: const EdgeInsets.all(10),
+      children: [
+        // 1. Hình học tiết diện & tỷ lệ L/h = 5..10
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: border)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '1. Kích thước Dầm BTCT',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.0, color: Color(0xFF38BDF8)),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: (lhOk ? const Color(0xFF15803D) : const Color(0xFFB45309)).withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(5),
+                      border: Border.all(color: lhOk ? const Color(0xFF22C55E) : const Color(0xFFF59E0B)),
+                    ),
+                    child: Text(
+                      'L/h=${lh.toStringAsFixed(1)}${lhOk ? " ✓" : "!"}',
+                      style: TextStyle(
+                        fontSize: 9.2,
+                        fontWeight: FontWeight.bold,
+                        color: lhOk ? const Color(0xFF22C55E) : const Color(0xFFFBBF24),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 5,
+                runSpacing: 4,
+                children: [
+                  for (final r in [5.0, 6.0, 8.0, 10.0])
+                    ActionChip(
+                      label: Text('L/h = ${r.toStringAsFixed(0)}', style: const TextStyle(fontSize: 9.6)),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () {
+                        final newL = (c.heightMm * r).clamp(1500.0, 12000.0);
+                        final newA = c.loadType == RcBeamLoadType.threePoint ? 0.5 * newL : (newL / 3.0).roundToDouble();
+                        _updateRcBeam((x) => x.copyWith(spanMm: newL, loadAMm: newA));
+                      },
+                    ),
+                ],
+              ),
+              _EditableParamSlider(
+                label: 'Nhịp dầm L',
+                value: c.spanMm,
+                min: 1500,
+                max: 9000,
+                hardMin: 800,
+                hardMax: 20000,
+                unit: 'mm',
+                isInt: true,
+                darkMode: _darkMode,
+                onChanged: (v) {
+                  final nextA = c.loadType == RcBeamLoadType.threePoint
+                      ? (c.loadAMm * v / c.spanMm).clamp(0.05 * v, 0.95 * v)
+                      : (c.loadAMm * v / c.spanMm).clamp(0.05 * v, 0.49 * v);
+                  _updateRcBeam((x) => x.copyWith(spanMm: v, loadAMm: nextA));
+                },
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: _CompactDimField(
+                      label: 'Bề rộng b',
+                      value: c.widthMm,
+                      minVal: 100,
+                      maxVal: 1200,
+                      darkMode: _darkMode,
+                      onChanged: (v) => _updateRcBeam((x) => x.copyWith(widthMm: v)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _CompactDimField(
+                      label: 'Chiều cao h',
+                      value: c.heightMm,
+                      minVal: 150,
+                      maxVal: 1500,
+                      darkMode: _darkMode,
+                      onChanged: (v) => _updateRcBeam((x) => x.copyWith(heightMm: v)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // 2. Cốt thép dọc & Tùy chọn Dầm cốt cứng (thép hình I)
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: border)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '2. Cốt thép (Trọng tâm) & Cốt cứng  •  μ = ${c.steelRatioPct.toStringAsFixed(2)}%',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.0, color: Color(0xFFF59E0B)),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  for (final (lbl, area) in [('2Ø16', 402.1), ('3Ø20', 942.5), ('4Ø22', 1520.5), ('5Ø25', 2454.4)])
+                    ActionChip(
+                      label: Text(lbl, style: const TextStyle(fontSize: 9.5)),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _updateRcBeam((x) => x.copyWith(asBotMm2: area)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: _CompactDimField(
+                      label: 'Thép kéo As',
+                      value: c.asBotMm2,
+                      minVal: 50,
+                      maxVal: 12000,
+                      unit: 'mm²',
+                      darkMode: _darkMode,
+                      onChanged: (v) => _updateRcBeam((x) => x.copyWith(asBotMm2: v)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _CompactDimField(
+                      label: 'Thép nén As\'',
+                      value: c.asTopMm2,
+                      minVal: 0,
+                      maxVal: 8000,
+                      unit: 'mm²',
+                      darkMode: _darkMode,
+                      onChanged: (v) => _updateRcBeam((x) => x.copyWith(asTopMm2: v)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: _CompactDimField(
+                      label: 'Khoảng a_s (đáy)',
+                      value: c.coverBotMm,
+                      minVal: 15,
+                      maxVal: 150,
+                      darkMode: _darkMode,
+                      onChanged: (v) => _updateRcBeam((x) => x.copyWith(coverBotMm: v)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _CompactDimField(
+                      label: 'Khoảng a_s\' (đỉnh)',
+                      value: c.coverTopMm,
+                      minVal: 15,
+                      maxVal: 150,
+                      darkMode: _darkMode,
+                      onChanged: (v) => _updateRcBeam((x) => x.copyWith(coverTopMm: v)),
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Dầm cốt cứng (Thép hình chữ I lõi)',
+                            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)),
+                        Text(
+                          'Bổ sung tiết diện thép I đồng tâm vào lưới thớ',
+                          style: TextStyle(
+                              fontSize: 9.1,
+                              color: _darkMode ? const Color(0xFF94A3B8) : const Color(0xFF475569)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: c.hasRigidCore,
+                    onChanged: (v) => _updateRcBeam((x) => x.copyWith(hasRigidCore: v)),
+                  ),
+                ],
+              ),
+              if (c.hasRigidCore) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: _CompactDimField(
+                        label: 'Cao lõi H_I',
+                        value: c.coreHMm,
+                        minVal: 60,
+                        maxVal: c.heightMm - 50,
+                        darkMode: _darkMode,
+                        onChanged: (v) => _updateRcBeam((x) => x.copyWith(coreHMm: v)),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _CompactDimField(
+                        label: 'Rộng cánh B_I',
+                        value: c.coreBMm,
+                        minVal: 40,
+                        maxVal: c.widthMm - 30,
+                        darkMode: _darkMode,
+                        onChanged: (v) => _updateRcBeam((x) => x.copyWith(coreBMm: v)),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _CompactDimField(
+                        label: 'Dày cánh tf',
+                        value: c.coreTfMm,
+                        minVal: 4,
+                        maxVal: 30,
+                        darkMode: _darkMode,
+                        onChanged: (v) => _updateRcBeam((x) => x.copyWith(coreTfMm: v)),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _CompactDimField(
+                        label: 'Dày bụng tw',
+                        value: c.coreTwMm,
+                        minVal: 4,
+                        maxVal: 25,
+                        darkMode: _darkMode,
+                        onChanged: (v) => _updateRcBeam((x) => x.copyWith(coreTwMm: v)),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _CompactDimField(
+                        label: 'fy cốt cứng',
+                        value: c.coreFyMpa,
+                        minVal: 180,
+                        maxVal: 500,
+                        unit: 'MPa',
+                        darkMode: _darkMode,
+                        onChanged: (v) => _updateRcBeam((x) => x.copyWith(coreFyMpa: v)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // 3. Tùy chỉnh Liên kết Gối tựa hai đầu dầm
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: border)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('3. Liên kết Gối tựa Hai đầu Dầm',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.2, color: Color(0xFF10B981))),
+              const SizedBox(height: 7),
+              DropdownButtonFormField<BeamSupportType>(
+                key: ValueKey('rc_lsup_${c.leftSupport.code}'),
+                initialValue: c.leftSupport,
+                isExpanded: true,
+                isDense: true,
+                decoration: const InputDecoration(labelText: 'Đầu trái (x = 0)', isDense: true, border: OutlineInputBorder()),
+                items: [
+                  for (final s in BeamSupportType.values)
+                    DropdownMenuItem(value: s, child: Text(s.label, style: const TextStyle(fontSize: 10.6))),
+                ],
+                onChanged: (v) {
+                  if (v != null) _updateRcBeam((x) => x.copyWith(leftSupport: v));
+                },
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<BeamSupportType>(
+                key: ValueKey('rc_rsup_${c.rightSupport.code}'),
+                initialValue: c.rightSupport,
+                isExpanded: true,
+                isDense: true,
+                decoration: const InputDecoration(labelText: 'Đầu phải (x = L)', isDense: true, border: OutlineInputBorder()),
+                items: [
+                  for (final s in BeamSupportType.values)
+                    DropdownMenuItem(value: s, child: Text(s.label, style: const TextStyle(fontSize: 10.6))),
+                ],
+                onChanged: (v) {
+                  if (v != null) _updateRcBeam((x) => x.copyWith(rightSupport: v));
+                },
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  ActionChip(
+                    label: const Text('Đơn giản (Khớp–Di động)', style: TextStyle(fontSize: 9.3)),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _updateRcBeam((x) => x.copyWith(leftSupport: BeamSupportType.pin, rightSupport: BeamSupportType.roller)),
+                  ),
+                  ActionChip(
+                    label: const Text('Ngàm 2 đầu', style: TextStyle(fontSize: 9.3)),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _updateRcBeam((x) => x.copyWith(leftSupport: BeamSupportType.fixed, rightSupport: BeamSupportType.fixed)),
+                  ),
+                  ActionChip(
+                    label: const Text('Công-xôn', style: TextStyle(fontSize: 9.3)),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _updateRcBeam((x) => x.copyWith(leftSupport: BeamSupportType.fixed, rightSupport: BeamSupportType.free)),
+                  ),
+                ],
+              ),
+              if (c.leftSupport == BeamSupportType.spring || c.rightSupport == BeamSupportType.spring) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _CompactDimField(
+                        label: 'Lò xo đứng kv',
+                        value: c.springKvKnMm,
+                        minVal: 1,
+                        maxVal: 50000,
+                        unit: 'kN/mm',
+                        darkMode: _darkMode,
+                        onChanged: (v) => _updateRcBeam((x) => x.copyWith(springKvKnMm: v)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _CompactDimField(
+                        label: 'Lò xo xoay kθ',
+                        value: c.springKthKnmRad,
+                        minVal: 100,
+                        maxVal: 5000000,
+                        unit: 'kNm',
+                        darkMode: _darkMode,
+                        onChanged: (v) => _updateRcBeam((x) => x.copyWith(springKthKnmRad: v)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRcBeamLeftMatTab(Color cardBg, Color border) {
+    final c = _rcConfig;
+    final res = _rcActive;
+    final lin = _rcLinear;
+    return ListView(
+      padding: const EdgeInsets.all(10),
+      children: [
+        // 1. Bê tông
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: border)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('1. Vật liệu Bê tông (Hognestad & Nứt kéo)',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.2, color: Color(0xFF38BDF8))),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  for (final (lbl, fc, ec, fct) in [
+                    ('B20', 20.0, 27000.0, 2.2),
+                    ('B25', 25.0, 30000.0, 2.6),
+                    ('B30', 30.0, 32500.0, 2.9),
+                    ('B35', 35.0, 34500.0, 3.2),
+                    ('B40', 40.0, 36000.0, 3.5),
+                  ])
+                    ActionChip(
+                      label: Text(lbl, style: const TextStyle(fontSize: 9.5)),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _updateRcBeam((x) => x.copyWith(fcMpa: fc, ecMpa: ec, fctMpa: fct)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: _CompactDimField(
+                      label: 'Nén f\'c',
+                      value: c.fcMpa,
+                      minVal: 10,
+                      maxVal: 90,
+                      unit: 'MPa',
+                      darkMode: _darkMode,
+                      onChanged: (v) => _updateRcBeam((x) => x.copyWith(fcMpa: v)),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _CompactDimField(
+                      label: 'Mô-đun Ec',
+                      value: c.ecMpa,
+                      minVal: 15000,
+                      maxVal: 55000,
+                      unit: 'MPa',
+                      darkMode: _darkMode,
+                      onChanged: (v) => _updateRcBeam((x) => x.copyWith(ecMpa: v)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: _CompactDimField(
+                      label: 'Kéo nứt fct',
+                      value: c.fctMpa,
+                      minVal: 0.5,
+                      maxVal: 8.0,
+                      unit: 'MPa',
+                      darkMode: _darkMode,
+                      onChanged: (v) => _updateRcBeam((x) => x.copyWith(fctMpa: v)),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _CompactDimField(
+                      label: 'Biến dạng vỡ ε_cu',
+                      value: c.epsCu * 1000.0,
+                      minVal: 2.5,
+                      maxVal: 5.0,
+                      unit: '‰',
+                      darkMode: _darkMode,
+                      onChanged: (v) => _updateRcBeam((x) => x.copyWith(epsCu: v / 1000.0)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // 2. Cốt thép & Số bước tải
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: border)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('2. Vật liệu Cốt thép (Đàn-dẻo Song tuyến)',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.2, color: Color(0xFFF59E0B))),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  for (final (lbl, fy) in [('CB300-V', 300.0), ('CB400-V', 400.0), ('CB500-V', 500.0)])
+                    ActionChip(
+                      label: Text(lbl, style: const TextStyle(fontSize: 9.5)),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _updateRcBeam((x) => x.copyWith(fyMpa: fy)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: _CompactDimField(
+                      label: 'Giới hạn chảy fy',
+                      value: c.fyMpa,
+                      minVal: 200,
+                      maxVal: 700,
+                      unit: 'MPa',
+                      darkMode: _darkMode,
+                      onChanged: (v) => _updateRcBeam((x) => x.copyWith(fyMpa: v)),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _CompactDimField(
+                      label: 'Mô-đun Es',
+                      value: c.esMpa,
+                      minVal: 180000,
+                      maxVal: 220000,
+                      unit: 'MPa',
+                      darkMode: _darkMode,
+                      onChanged: (v) => _updateRcBeam((x) => x.copyWith(esMpa: v)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              _EditableParamSlider(
+                label: 'Số bước tăng tải nSteps',
+                value: c.nSteps.toDouble(),
+                min: 4,
+                max: 30,
+                hardMin: 1,
+                hardMax: 50,
+                unit: 'bước',
+                isInt: true,
+                darkMode: _darkMode,
+                onChanged: (v) => _updateRcBeam((x) => x.copyWith(nSteps: v.round())),
+              ),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _updateRcBeam((_) => const RcBeamConfig()),
+                  icon: const Icon(Icons.settings_backup_restore, size: 15),
+                  label: const Text('Reset Dầm BTCT về mặc định', style: TextStyle(fontSize: 10.6)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // 3. Chỉ số Kết quả tức thì
+        if (res != null && lin != null)
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFF06B6D4).withValues(alpha: 0.45)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('3. Chỉ số Kết quả Dầm BTCT Tức thì',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.2, color: Color(0xFF10B981))),
+                const SizedBox(height: 6),
+                Text(
+                  '• Độ võng tuyến tính : ${lin.vMidMm.toStringAsFixed(3)} mm\n'
+                  '• Độ võng phi tuyến  : ${res.vMidMm.toStringAsFixed(3)} mm (${(res.vMidMm.abs() / math.max(1e-6, lin.vMidMm.abs())).toStringAsFixed(2)}×)\n'
+                  '• Mô-men cực đại M   : ${res.mMaxKnm.toStringAsFixed(2)} kN·m\n'
+                  '• Phản lực gối RA/RB : ${res.rLeftKn.toStringAsFixed(1)} / ${res.rRightKn.toStringAsFixed(1)} kN\n'
+                  '• Trạng thái kết cấu : ${res.hasCrushing ? "VỠ NÉN BT" : (res.hasYielding ? "CHẢY CỐT THÉP" : (res.hasCracking ? "ĐÃ NỨT KÉO" : "ĐÀN HỒI"))}\n'
+                  '• Hội tụ thuật toán  : ${res.converged ? "ĐẠT" : "CHƯA ĐẠT"} (${res.totalIterations} vòng lặp)',
+                  style: const TextStyle(fontSize: 10.1, fontFamily: 'DejaVuSansMono', height: 1.45),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 

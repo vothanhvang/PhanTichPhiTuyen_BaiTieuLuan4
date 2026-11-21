@@ -486,17 +486,19 @@ class _Ansys2DPainter extends CustomPainter {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
     }
 
-    // 2. Cấu hình ban đầu nét đứt
-    final ghostPaint = Paint()
-      ..color = darkMode ? const Color(0xFF475569) : const Color(0xFF94A3B8)
-      ..strokeWidth = 1.6
-      ..style = PaintingStyle.stroke;
-    for (int e = 0; e < model.nElems; e++) {
-      final ni = model.conn[e][0] - 1;
-      final nj = model.conn[e][1] - 1;
-      final a = tf.toScreen(model.coords[ni][0], model.coords[ni][1]);
-      final b = tf.toScreen(model.coords[nj][0], model.coords[nj][1]);
-      _drawDashedLine(canvas, a, b, ghostPaint);
+    // 2. Cấu hình ban đầu nét đứt (ẩn khi ở chế độ Chế tạo để không lộ xuyên bản mã)
+    if (connectionMode != ConnectionDisplayMode.fabrication) {
+      final ghostPaint = Paint()
+        ..color = darkMode ? const Color(0xFF475569) : const Color(0xFF94A3B8)
+        ..strokeWidth = 1.6
+        ..style = PaintingStyle.stroke;
+      for (int e = 0; e < model.nElems; e++) {
+        final ni = model.conn[e][0] - 1;
+        final nj = model.conn[e][1] - 1;
+        final a = tf.toScreen(model.coords[ni][0], model.coords[ni][1]);
+        final b = tf.toScreen(model.coords[nj][0], model.coords[nj][1]);
+        _drawDashedLine(canvas, a, b, ghostPaint);
+      }
     }
 
     final span = (maxVal - minVal).abs() < 1e-12 ? 1.0 : (maxVal - minVal);
@@ -529,18 +531,26 @@ class _Ansys2DPainter extends CustomPainter {
       return ui.Gradient.linear(pA, pB, cols, stops);
     }
 
-    // 3. Các thanh biến dạng tô màu cầu vồng liên tục (Gradient mượt khi xem chuyển vị ||u||)
+    // 3. Các thanh biến dạng (cắt ngắn đầu thanh theo cấu tạo gia công thực tế khi bật Chế tạo!)
+    final isFab2D = connectionMode == ConnectionDisplayMode.fabrication;
     for (int e = 0; e < model.nElems; e++) {
       final ni = model.conn[e][0] - 1;
       final nj = model.conn[e][1] - 1;
-      final a = tf.toScreen(
+      final aRaw = tf.toScreen(
         model.coords[ni][0] + deformScale * result.uMm[2 * ni],
         model.coords[ni][1] + deformScale * result.uMm[2 * ni + 1],
       );
-      final b = tf.toScreen(
+      final bRaw = tf.toScreen(
         model.coords[nj][0] + deformScale * result.uMm[2 * nj],
         model.coords[nj][1] + deformScale * result.uMm[2 * nj + 1],
       );
+      final vRaw = bRaw - aRaw;
+      final lenRaw = vRaw.distance;
+      final cutPx = (isFab2D && lenRaw > 45.0) ? math.min(18.0, lenRaw * 0.20) : 0.0;
+      final uBar = lenRaw > 1e-3 ? vRaw / lenRaw : Offset.zero;
+      final a = aRaw + uBar * cutPx;
+      final b = bRaw - uBar * cutPx;
+
       final midVal = valueAt(e, 0.5);
       final tColor = ((midVal - minVal) / span).clamp(0.0, 1.0);
       final barColor = ansysRainbowColor(tColor);
@@ -555,13 +565,12 @@ class _Ansys2DPainter extends CustomPainter {
           Paint()
             ..color = const Color(0xFF38BDF8).withValues(alpha: 0.35)
             ..strokeWidth = thick + 8
-            ..strokeCap = StrokeCap.round,
+            ..strokeCap = isFab2D ? StrokeCap.butt : StrokeCap.round,
         );
       }
 
       if (surgicalMode && isSel) {
-        // Khi ở chế độ Phẫu thuật: nửa sau vết cắt ξ hiện mờ để thấy rõ mặt cắt mổ!
-        final cutPt = Offset(a.dx + probeXi * (b.dx - a.dx), a.dy + probeXi * (b.dy - a.dy));
+        final cutPt = Offset(aRaw.dx + probeXi * vRaw.dx, aRaw.dy + probeXi * vRaw.dy);
         if (probeXi > 0.01) {
           final pFront = Paint()
             ..color = barColor
@@ -576,14 +585,13 @@ class _Ansys2DPainter extends CustomPainter {
           final pBack = Paint()
             ..color = barColor.withValues(alpha: 0.25)
             ..strokeWidth = thick * 0.75
-            ..strokeCap = StrokeCap.round;
+            ..strokeCap = isFab2D ? StrokeCap.butt : StrokeCap.round;
           final shBack = barGradientShader(e, cutPt, b, probeXi, 1.0, 0.28);
           if (shBack != null) pBack.shader = shBack;
           canvas.drawLine(cutPt, b, pBack);
         }
 
-        // Đường dao cắt phẫu thuật vuông góc trục thanh
-        final dir = b - a;
+        final dir = bRaw - aRaw;
         final len = dir.distance;
         if (len > 1) {
           final perp = Offset(-dir.dy / len, dir.dx / len) * 26.0;
@@ -599,7 +607,7 @@ class _Ansys2DPainter extends CustomPainter {
         final pBar = Paint()
           ..color = barColor
           ..strokeWidth = thick
-          ..strokeCap = StrokeCap.round;
+          ..strokeCap = isFab2D ? StrokeCap.butt : StrokeCap.round;
         final sh = barGradientShader(e, a, b, 0.0, 1.0, 1.0);
         if (sh != null) pBar.shader = sh;
         canvas.drawLine(a, b, pBar);
@@ -624,45 +632,63 @@ class _Ansys2DPainter extends CustomPainter {
     }
     _drawSupportsAndLoads(canvas);
 
-    // 5. Vẽ nút khớp 2D (tô màu & vòng sáng nút đang chọn)
+    // 5. Vẽ nút khớp 2D (ở chế độ Chế tạo chỉ vẽ dấu tâm nút gọn + nhãn, không che bản mã)
     for (int i = 0; i < model.nNodes; i++) {
       final p = tf.toScreen(
         model.coords[i][0] + deformScale * result.uMm[2 * i],
         model.coords[i][1] + deformScale * result.uMm[2 * i + 1],
       );
-      if (selectedNode == i) {
-        canvas.drawCircle(p, 13.5, Paint()..color = const Color(0xFF06B6D4).withValues(alpha: 0.25));
+      final uNode = math.sqrt(math.pow(result.uMm[2 * i], 2) + math.pow(result.uMm[2 * i + 1], 2)) * playbackFraction;
+      if (isFab2D) {
+        if (selectedNode == i) {
+          canvas.drawCircle(
+            p,
+            9.0,
+            Paint()
+              ..color = const Color(0xFF00E5FF)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.6,
+          );
+        }
+        final crossP = Paint()
+          ..color = const Color(0xFF93C5FD).withValues(alpha: 0.75)
+          ..strokeWidth = 1.1;
+        canvas.drawLine(p + const Offset(-4.5, 0), p + const Offset(4.5, 0), crossP);
+        canvas.drawLine(p + const Offset(0, -4.5), p + const Offset(0, 4.5), crossP);
+      } else {
+        if (selectedNode == i) {
+          canvas.drawCircle(p, 13.5, Paint()..color = const Color(0xFF06B6D4).withValues(alpha: 0.25));
+          canvas.drawCircle(
+            p,
+            13.5,
+            Paint()
+              ..color = const Color(0xFF00E5FF)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 2.0,
+          );
+        }
+        final nodeAccent = field == ContourField.displacement
+            ? ansysRainbowColor(((uNode - minVal) / span).clamp(0.0, 1.0))
+            : const Color(0xFF38BDF8);
         canvas.drawCircle(
           p,
-          13.5,
+          7.5,
           Paint()
-            ..color = const Color(0xFF00E5FF)
+            ..color = field == ContourField.displacement
+                ? nodeAccent
+                : (darkMode ? const Color(0xFF0F172A) : Colors.white),
+        );
+        canvas.drawCircle(
+          p,
+          7.5,
+          Paint()
+            ..color = field == ContourField.displacement
+                ? (darkMode ? Colors.white : const Color(0xFF0F172A))
+                : nodeAccent
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 2.0,
+            ..strokeWidth = 2.2,
         );
       }
-      final uNode = math.sqrt(math.pow(result.uMm[2 * i], 2) + math.pow(result.uMm[2 * i + 1], 2)) * playbackFraction;
-      final nodeAccent = field == ContourField.displacement
-          ? ansysRainbowColor(((uNode - minVal) / span).clamp(0.0, 1.0))
-          : const Color(0xFF38BDF8);
-      canvas.drawCircle(
-        p,
-        7.5,
-        Paint()
-          ..color = field == ContourField.displacement
-              ? nodeAccent
-              : (darkMode ? const Color(0xFF0F172A) : Colors.white),
-      );
-      canvas.drawCircle(
-        p,
-        7.5,
-        Paint()
-          ..color = field == ContourField.displacement
-              ? (darkMode ? Colors.white : const Color(0xFF0F172A))
-              : nodeAccent
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.2,
-      );
       final nodeLabel = field == ContourField.displacement
           ? 'N${i + 1} (${uNode.toStringAsFixed(3)} mm)'
           : 'N${i + 1}';
@@ -714,9 +740,9 @@ class _Ansys2DPainter extends CustomPainter {
     );
   }
 
-  /// Vẽ bản mã vát góc, bu-lông lục giác / đường hàn cam / chốt Clevis & bản đế móng trên 2D chế tạo
+  /// Vẽ bản mã vát góc ĐẶC 100% che khuất hoàn toàn đầu thanh nằm sau, kèm bu-lông / đường hàn / chốt Clevis & bản đế móng
   void _drawFabricationNodes2D(Canvas canvas) {
-    final gussetFill = Paint()..color = darkMode ? const Color(0xCC1D4ED8) : const Color(0xCC93C5FD);
+    final gussetFill = Paint()..color = darkMode ? const Color(0xFF1D4ED8) : const Color(0xFF93C5FD);
     final gussetEdge = Paint()
       ..color = const Color(0xFF38BDF8)
       ..style = PaintingStyle.stroke

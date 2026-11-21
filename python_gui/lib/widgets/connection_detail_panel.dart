@@ -18,6 +18,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../core/calfem_engine.dart';
 import '../core/connection_calculator.dart';
+import '../core/connection_drawing_exporter.dart';
 import 'ansys_colorbar.dart';
 
 class ConnectionDetailPanel extends StatefulWidget {
@@ -56,6 +57,41 @@ class ConnectionDetailPanel extends StatefulWidget {
 
 class _ConnectionDetailPanelState extends State<ConnectionDetailPanel> {
   bool _showStressMap = true;
+  bool _exportingDrawing = false;
+
+  Future<void> _exportShopDrawing(NodeConnectionReport report, {required bool isAutoCad}) async {
+    if (_exportingDrawing) return;
+    setState(() => _exportingDrawing = true);
+    try {
+      final path = isAutoCad
+          ? await ConnectionDrawingExporter.exportNodeDxf(model: widget.model, report: report)
+          : await ConnectionDrawingExporter.exportNodeBlueprintPdf(model: widget.model, report: report);
+      if (!mounted) return;
+      if (path != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF0F766E),
+            content: Text(
+              isAutoCad
+                  ? 'Đã xuất bản vẽ cấu tạo AutoCAD (.dxf) Nút ${report.nodeIndex + 1}:\n$path'
+                  : 'Đã xuất bản vẽ kỹ thuật liên kết PDF Nút ${report.nodeIndex + 1}:\n$path',
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFFB91C1C),
+          content: Text('Lỗi xuất bản vẽ liên kết: $e', style: const TextStyle(color: Colors.white)),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _exportingDrawing = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -308,6 +344,39 @@ class _ConnectionDetailPanelState extends State<ConnectionDetailPanel> {
                 '• Bản mã PL${p.gussetThicknessMm.toStringAsFixed(0)} (${report.gussetWidthMm.toStringAsFixed(0)}×${report.gussetHeightMm.toStringAsFixed(0)} mm, thép ${p.steelGrade.code})  •  '
                 'Phản lực R = (${report.rxKn.toStringAsFixed(2)}, ${report.ryKn.toStringAsFixed(2)}) kN',
                 style: TextStyle(fontSize: 9.8, color: textSub),
+              ),
+              const SizedBox(height: 8),
+              // Nút xuất bản vẽ cấu tạo liên kết chuẩn xưởng chế tạo (PDF Vector & AutoCAD .dxf 1:1 mm)
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _exportingDrawing ? null : () => _exportShopDrawing(report, isAutoCad: false),
+                      icon: const Icon(Icons.picture_as_pdf, size: 15),
+                      label: const Text('Bản vẽ PDF', style: TextStyle(fontSize: 10.6, fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFB91C1C),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _exportingDrawing ? null : () => _exportShopDrawing(report, isAutoCad: true),
+                      icon: const Icon(Icons.architecture, size: 15),
+                      label: const Text('AutoCAD (.dxf)', style: TextStyle(fontSize: 10.6, fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0E7490),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -716,47 +785,15 @@ class _FabricationNodePainter extends CustomPainter {
     // 3. Vẽ chi tiết Gối tựa gia công chế tạo (Bản đế + Sườn + Bu-lông neo + Bê tông / Con lăn / Lò xo)
     _paintFabricationSupport(canvas, center, isTop, isRight);
 
-    // 4. Tô Bản mã nút (nếu bật Bản đồ ứng suất -> dải cầu vồng von Mises tập trung quanh lỗ bu-lông / đường hàn!)
-    if (gussetPoly.length >= 3) {
-      final gp = Path()..moveTo(gussetPoly.first.dx, gussetPoly.first.dy);
-      for (int k = 1; k < gussetPoly.length; k++) {
-        gp.lineTo(gussetPoly[k].dx, gussetPoly[k].dy);
-      }
-      gp.close();
-
-      if (showStressMap) {
-        // Phủ bản đồ ứng suất von Mises (xanh → lơ → lá → vàng → đỏ theo % chịu lực)
-        final tPeak = (report.maxGussetSigmaMpa / p.steelGrade.fyMpa).clamp(0.08, 1.0);
-        final peakCol = ansysRainbowColor(tPeak);
-        final midCol = ansysRainbowColor((tPeak * 0.55).clamp(0.05, 0.85));
-        final edgeCol = ansysRainbowColor(0.06);
-        final shader = ui.Gradient.radial(
-          center,
-          gussetReach * 1.15,
-          [peakCol.withValues(alpha: 0.90), midCol.withValues(alpha: 0.85), edgeCol.withValues(alpha: 0.82)],
-          const [0.0, 0.52, 1.0],
-        );
-        canvas.drawPath(gp, Paint()..shader = shader);
-      } else {
-        canvas.drawPath(gp, Paint()..color = darkMode ? const Color(0xFF1E3A5F) : const Color(0xFFBFDBFE));
-      }
-
-      // Viền cắt laser/CNC bản mã + đường nét đứt mép vát
-      canvas.drawPath(
-        gp,
-        Paint()
-          ..color = const Color(0xFF38BDF8)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.0,
-      );
-    }
-
-    // 5. Vẽ từng thanh thép (tiết diện chữ I/ống) đi vào bản mã + Chi tiết Bu-lông / Hàn / Chốt Clevis
+    // 4. Vẽ các thanh thép ĐÃ CẮT NGẮN ĐẦU THANH (setback thực tế) NẰM PHÍA SAU bản mã trước!
+    // Khi tô bản mã đặc 100% đè lên ở bước 5, mọi phần đầu thanh bị khuất sau bản mã sẽ ẩn hoàn toàn!
+    final startDist = p.detailType == ConnectionDetailType.pinnedClevis
+        ? gussetReach * 0.48
+        : gussetReach * 0.44;
     for (final m in report.members) {
       final dir = Offset(math.cos(m.angleRad), -math.sin(m.angleRad));
       final perp = Offset(-dir.dy, dir.dx);
       final halfH = (m.heightMm * 0.24).clamp(15.0, 25.0);
-      final startDist = p.detailType == ConnectionDetailType.pinnedClevis ? 26.0 : 18.0;
       final endDist = armLen;
 
       final pA = center + dir * startDist;
@@ -770,8 +807,8 @@ class _FabricationNodePainter extends CustomPainter {
 
       final util = (m.activeUtilPct(p.detailType) / 100.0).clamp(0.05, 1.0);
       final memFill = showStressMap
-          ? ansysRainbowColor(util * 0.85).withValues(alpha: 0.52)
-          : (darkMode ? const Color(0xCC334155) : const Color(0xCC94A3B8));
+          ? ansysRainbowColor(util * 0.85)
+          : (darkMode ? const Color(0xFF334155) : const Color(0xFF94A3B8));
       canvas.drawPath(body, Paint()..color = memFill);
       canvas.drawPath(
         body,
@@ -784,27 +821,70 @@ class _FabricationNodePainter extends CustomPainter {
       // Hai đường cánh chữ I (Flange lines) chuẩn bản vẽ chế tạo
       final flangeOff = halfH * 0.68;
       final flangePaint = Paint()
-        ..color = darkMode ? const Color(0xAA94A3B8) : const Color(0xAA334155)
+        ..color = darkMode ? const Color(0xCC94A3B8) : const Color(0xCC334155)
         ..strokeWidth = 1.0;
       canvas.drawLine(pA + perp * flangeOff, pB + perp * flangeOff, flangePaint);
       canvas.drawLine(pA - perp * flangeOff, pB - perp * flangeOff, flangePaint);
 
-      // Đường trục tâm thanh (Centerline nét chấm gạch)
+      // Đường trục tâm thanh chỉ vẽ phía ngoài mép bản mã (không vẽ xuyên đè lên đầu thanh khuất)
       canvas.drawLine(
-        center,
+        center + dir * gussetReach,
         pB + dir * 10,
         Paint()
-          ..color = const Color(0xFF38BDF8).withValues(alpha: 0.45)
+          ..color = const Color(0xFF38BDF8).withValues(alpha: 0.55)
           ..strokeWidth = 0.9,
       );
+    }
 
-      // CHI TIẾT LIÊN KẾT ĐẦU THANH THEO LOẠI GIA CÔNG
+    // 5. Tô Bản mã nút ĐẶC 100% (alpha = 1.0) đè lên trên — che khuất tuyệt đối đầu thanh nằm sau bản mã!
+    if (gussetPoly.length >= 3) {
+      final gp = Path()..moveTo(gussetPoly.first.dx, gussetPoly.first.dy);
+      for (int k = 1; k < gussetPoly.length; k++) {
+        gp.lineTo(gussetPoly[k].dx, gussetPoly[k].dy);
+      }
+      gp.close();
+
+      if (showStressMap) {
+        // Phủ bản đồ ứng suất von Mises đặc 100% (không xuyên thấu chi tiết khuất phía sau)
+        final tPeak = (report.maxGussetSigmaMpa / p.steelGrade.fyMpa).clamp(0.08, 1.0);
+        final peakCol = ansysRainbowColor(tPeak);
+        final midCol = ansysRainbowColor((tPeak * 0.55).clamp(0.05, 0.85));
+        final edgeCol = ansysRainbowColor(0.06);
+        final shader = ui.Gradient.radial(
+          center,
+          gussetReach * 1.15,
+          [peakCol, midCol, edgeCol],
+          const [0.0, 0.52, 1.0],
+        );
+        canvas.drawPath(gp, Paint()..shader = shader);
+      } else {
+        canvas.drawPath(gp, Paint()..color = darkMode ? const Color(0xFF1D4ED8) : const Color(0xFF93C5FD));
+      }
+
+      // Viền cắt laser/CNC bản mã
+      canvas.drawPath(
+        gp,
+        Paint()
+          ..color = darkMode ? const Color(0xFF93C5FD) : const Color(0xFF1E3A8A)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0,
+      );
+    }
+
+    // 6. Vẽ chi tiết Bu-lông / Đường hàn / Tai chốt Clevis NỔI TRÊN MẶT NGOÀI bản mã + nhãn nội lực
+    for (final m in report.members) {
+      final dir = Offset(math.cos(m.angleRad), -math.sin(m.angleRad));
+      final perp = Offset(-dir.dy, dir.dx);
+      final halfH = (m.heightMm * 0.24).clamp(15.0, 25.0);
+      final endDist = armLen;
+
       if (p.detailType == ConnectionDetailType.boltedGusset) {
         final nRows = math.max(1, (p.boltsPerMember / 2).ceil());
-        final rowStep = math.min(18.0, (gussetReach - startDist - 12.0) / math.max(1, nRows));
-        final colOff = halfH * 0.46;
+        final usable = math.max(14.0, gussetReach - startDist - 12.0);
+        final rowStep = nRows > 1 ? math.min(18.0, usable / (nRows - 1)) : 0.0;
+        final colOff = halfH * 0.44;
         for (int r = 0; r < nRows; r++) {
-          final dist = startDist + 12.0 + r * rowStep;
+          final dist = startDist + 10.0 + r * rowStep;
           final rowsY = p.boltsPerMember == 2 ? [0.0] : [-colOff, colOff];
           for (final off in rowsY) {
             final bc = center + dir * dist + perp * off;
@@ -812,8 +892,8 @@ class _FabricationNodePainter extends CustomPainter {
           }
         }
       } else if (p.detailType == ConnectionDetailType.weldedGusset) {
-        // Đường hàn góc 2 mép màu cam đỏ + nét vảy cá
-        final wStart = startDist + 3.0;
+        // Đường hàn góc 2 mép màu cam đỏ + nét vảy cá trên vùng chồng lấn [startDist..gussetReach]
+        final wStart = startDist + 2.0;
         final wEnd = gussetReach - 3.0;
         final weldPaint = Paint()
           ..color = const Color(0xFFF97316)
@@ -823,7 +903,6 @@ class _FabricationNodePainter extends CustomPainter {
           final wa = center + dir * wStart + perp * (halfH * sgn);
           final wb = center + dir * wEnd + perp * (halfH * sgn);
           canvas.drawLine(wa, wb, weldPaint);
-          // Vảy đường hàn
           final tickPaint = Paint()..color = const Color(0xFFFDE047)..strokeWidth = 1.0;
           for (double d = wStart + 4; d < wEnd - 2; d += 7.0) {
             final q = center + dir * d + perp * (halfH * sgn);

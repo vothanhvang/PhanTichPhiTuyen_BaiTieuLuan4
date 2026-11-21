@@ -19,6 +19,7 @@ Future<String?> saveBinaryFile(String fileName, Uint8List bytes, String mimeType
         '.png' => 'PNG Image',
         '.csv' => 'CSV Table',
         '.json' => 'CALFEM Project File',
+        '.dxf' => 'AutoCAD DXF Drawing',
         _ => 'File',
       };
 

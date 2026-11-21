@@ -204,6 +204,11 @@ bool FlutterWindow::OnCreate() {
           filter.push_back(L'\0');
           filter.append(L"*.json");
           filter.push_back(L'\0');
+        } else if (ext == "dxf") {
+          filter.append(L"AutoCAD Drawing (*.dxf)");
+          filter.push_back(L'\0');
+          filter.append(L"*.dxf");
+          filter.push_back(L'\0');
         }
         filter.append(L"T\x1EA5t c\x1EA3 t\x1EC7p (*.*)");
         filter.push_back(L'\0');
